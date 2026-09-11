@@ -4,12 +4,14 @@ export interface StampSubmission {
   requestId: string;
   sha256: string;
   signature: string | null;
-  status: 'building' | 'signed' | 'submitted' | 'uncertain' | 'failed';
+  status: 'building' | 'submitted';
   lastValidBlockHeight: number | null;
 }
 
-function endpoint(path = ''): string {
-  return `${SUBMIT_API_BASE}/api/stamps${path}`;
+const attemptedRequestIds = new Set<string>();
+
+function endpoint(): string {
+  return `${SUBMIT_API_BASE}/api/stamps`;
 }
 
 async function parseResponse(response: Response): Promise<StampSubmission> {
@@ -24,17 +26,17 @@ async function parseResponse(response: Response): Promise<StampSubmission> {
 }
 
 export async function submitStamp(requestId: string, sha256: string): Promise<StampSubmission> {
+  if (attemptedRequestIds.has(requestId)) {
+    throw new Error(
+      'This submission will not be retried automatically because v1 does not keep server-side recovery state.',
+    );
+  }
+  attemptedRequestIds.add(requestId);
+
   const response = await fetch(endpoint(), {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ protocolVersion: 1, requestId, sha256 }),
-  });
-  return parseResponse(response);
-}
-
-export async function recoverStamp(requestId: string): Promise<StampSubmission> {
-  const response = await fetch(endpoint(`?requestId=${encodeURIComponent(requestId)}`), {
-    method: 'GET',
   });
   return parseResponse(response);
 }
