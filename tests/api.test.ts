@@ -3,34 +3,55 @@ import { SubmissionOutcomeUnknownError, submitStamp } from '../src/lib/api';
 
 const REQUEST_ID = '123e4567-e89b-42d3-a456-426614174000';
 const HASH = 'a'.repeat(64);
+const SIGNATURE = '1'.repeat(64);
+
+function submittedResponse(overrides: Record<string, unknown> = {}): Response {
+  return new Response(
+    JSON.stringify({
+      requestId: REQUEST_ID,
+      sha256: HASH,
+      signature: SIGNATURE,
+      status: 'submitted',
+      lastValidBlockHeight: 123,
+      ...overrides,
+    }),
+    { status: 200, headers: { 'content-type': 'application/json' } },
+  );
+}
 
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
 describe('submitStamp', () => {
-  it('returns a normal submitted response', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue(
-        new Response(
-          JSON.stringify({
-            requestId: REQUEST_ID,
-            sha256: HASH,
-            signature: 'signature',
-            status: 'submitted',
-            lastValidBlockHeight: 123,
-          }),
-          { status: 200, headers: { 'content-type': 'application/json' } },
-        ),
-      ),
-    );
+  it('returns a validated submitted response', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(submittedResponse()));
 
-    await expect(submitStamp(REQUEST_ID, HASH)).resolves.toMatchObject({
+    await expect(submitStamp(REQUEST_ID, HASH)).resolves.toEqual({
       requestId: REQUEST_ID,
       sha256: HASH,
+      signature: SIGNATURE,
       status: 'submitted',
+      lastValidBlockHeight: 123,
     });
+  });
+
+  it('rejects a success response bound to a different request or digest', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(submittedResponse({ sha256: 'b'.repeat(64) })));
+
+    await expect(submitStamp(REQUEST_ID, HASH)).rejects.toBeInstanceOf(SubmissionOutcomeUnknownError);
+  });
+
+  it('rejects a malformed transaction signature in a success response', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(submittedResponse({ signature: 'not-a-signature' })));
+
+    await expect(submitStamp(REQUEST_ID, HASH)).rejects.toBeInstanceOf(SubmissionOutcomeUnknownError);
+  });
+
+  it('rejects an invalid blockhash lifetime in a success response', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(submittedResponse({ lastValidBlockHeight: -1 })));
+
+    await expect(submitStamp(REQUEST_ID, HASH)).rejects.toBeInstanceOf(SubmissionOutcomeUnknownError);
   });
 
   it('treats the explicit sponsor-disabled response as a known failure', async () => {
