@@ -1,11 +1,12 @@
+import { decodeBase58 } from './base58';
 import { SUBMIT_API_BASE } from './config';
 
 export interface StampSubmission {
   requestId: string;
   sha256: string;
-  signature: string | null;
-  status: 'building' | 'submitted';
-  lastValidBlockHeight: number | null;
+  signature: string;
+  status: 'submitted';
+  lastValidBlockHeight: number;
 }
 
 export class SubmissionOutcomeUnknownError extends Error {
@@ -19,32 +20,62 @@ function endpoint(): string {
   return `${SUBMIT_API_BASE}/api/stamps`;
 }
 
-async function parseResponse(response: Response): Promise<StampSubmission> {
-  const body = (await response.json().catch(() => null)) as
-    | (StampSubmission & { error?: string })
-    | { error?: string }
-    | null;
+function hasValidSignature(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  try {
+    return decodeBase58(value).length === 64;
+  } catch {
+    return false;
+  }
+}
+
+function responseIsValid(
+  body: unknown,
+  expectedRequestId: string,
+  expectedSha256: string,
+): body is StampSubmission {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return false;
+  const candidate = body as Record<string, unknown>;
+  return (
+    candidate.requestId === expectedRequestId &&
+    candidate.sha256 === expectedSha256 &&
+    candidate.status === 'submitted' &&
+    hasValidSignature(candidate.signature) &&
+    Number.isSafeInteger(candidate.lastValidBlockHeight) &&
+    Number(candidate.lastValidBlockHeight) >= 0
+  );
+}
+
+async function parseResponse(
+  response: Response,
+  expectedRequestId: string,
+  expectedSha256: string,
+): Promise<StampSubmission> {
+  const body = (await response.json().catch(() => null)) as unknown;
 
   if (!response.ok) {
-    const message = body?.error || `Submission service returned HTTP ${response.status}.`;
+    const errorMessage =
+      body && typeof body === 'object' && !Array.isArray(body) && typeof (body as Record<string, unknown>).error === 'string'
+        ? String((body as Record<string, unknown>).error)
+        : `Submission service returned HTTP ${response.status}.`;
     const creationDefinitelyDisabled =
-      response.status === 503 && /creation is temporarily disabled/i.test(message);
+      response.status === 503 && /creation is temporarily disabled/i.test(errorMessage);
 
     if (response.status >= 500 && !creationDefinitelyDisabled) {
       throw new SubmissionOutcomeUnknownError(
-        `${message} The request may already have reached Solana, so it will not be retried automatically.`,
+        `${errorMessage} The request may already have reached Solana, so it will not be retried automatically.`,
       );
     }
-    throw new Error(message);
+    throw new Error(errorMessage);
   }
 
-  if (!body || !('requestId' in body) || !('sha256' in body) || !('status' in body)) {
+  if (!responseIsValid(body, expectedRequestId, expectedSha256)) {
     throw new SubmissionOutcomeUnknownError(
-      'The submission service returned an incomplete response. The request may already have reached Solana.',
+      'The submission service returned an invalid response. The request may already have reached Solana, so it will not be retried automatically.',
     );
   }
 
-  return body as StampSubmission;
+  return body;
 }
 
 export async function submitStamp(requestId: string, sha256: string): Promise<StampSubmission> {
@@ -61,5 +92,5 @@ export async function submitStamp(requestId: string, sha256: string): Promise<St
     );
   }
 
-  return parseResponse(response);
+  return parseResponse(response, requestId, sha256);
 }
