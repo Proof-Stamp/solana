@@ -2,7 +2,9 @@ import {
   appendTransactionMessageInstruction,
   blockhash,
   createKeyPairSignerFromBytes,
+  createKeyPairSignerFromPrivateKeyBytes,
   createTransactionMessage,
+  getBase58Encoder,
   getBase64EncodedWireTransaction,
   getSignatureFromTransaction,
   pipe,
@@ -15,6 +17,7 @@ import { getAddMemoInstruction } from '@solana-program/memo';
 const MEMO_PROGRAM_ID = 'MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr';
 const SHA256_RE = /^[0-9a-f]{64}$/;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const BASE58_RE = /^[1-9A-HJ-NP-Za-km-z]+$/;
 const PROTOCOL_PREFIX = 'proofstamp:v1:sha256:';
 
 function json(body, status = 200, extraHeaders = {}) {
@@ -88,27 +91,56 @@ async function assertDevnet(env) {
   return genesisHash;
 }
 
+function isSupportedSecretLength(bytes) {
+  return bytes.length === 32 || bytes.length === 64;
+}
+
 function parseSecretBytes(raw) {
   if (!raw) throw new Error('SOLANA_FEE_PAYER_SECRET is not configured.');
   const value = raw.trim();
-  let bytes;
+
   if (value.startsWith('[')) {
     const parsed = JSON.parse(value);
-    if (!Array.isArray(parsed)) throw new Error('Fee payer secret must be a byte array or base64 string.');
-    bytes = Uint8Array.from(parsed);
-  } else {
+    if (!Array.isArray(parsed)) {
+      throw new Error('Fee payer secret must be a Solana byte array, Base58 private key, or base64 string.');
+    }
+    const bytes = Uint8Array.from(parsed);
+    if (!isSupportedSecretLength(bytes)) {
+      throw new Error(`Fee payer secret must decode to 32 or 64 bytes; received ${bytes.length}.`);
+    }
+    return bytes;
+  }
+
+  if (BASE58_RE.test(value)) {
+    try {
+      const bytes = getBase58Encoder().encode(value);
+      if (isSupportedSecretLength(bytes)) return bytes;
+    } catch {
+      // Fall through and try base64 for backwards compatibility.
+    }
+  }
+
+  try {
     const binary = atob(value);
-    bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+    const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+    if (isSupportedSecretLength(bytes)) return bytes;
+    throw new Error(`Fee payer secret must decode to 32 or 64 bytes; received ${bytes.length}.`);
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith('Fee payer secret must decode')) throw error;
+    throw new Error('Fee payer secret must be a Solana byte array, Base58 private key, or base64 string.');
   }
-  if (bytes.length !== 64) {
-    throw new Error(`Fee payer secret must contain 64 bytes; received ${bytes.length}.`);
-  }
-  return bytes;
+}
+
+async function createFeePayerSigner(rawSecret) {
+  const bytes = parseSecretBytes(rawSecret);
+  return bytes.length === 32
+    ? createKeyPairSignerFromPrivateKeyBytes(bytes)
+    : createKeyPairSignerFromBytes(bytes);
 }
 
 async function buildSignedTransaction(env, digest) {
   const latest = await rpcCall(env, 'getLatestBlockhash', [{ commitment: 'confirmed' }]);
-  const signer = await createKeyPairSignerFromBytes(parseSecretBytes(env.SOLANA_FEE_PAYER_SECRET));
+  const signer = await createFeePayerSigner(env.SOLANA_FEE_PAYER_SECRET);
   const memo = `${PROTOCOL_PREFIX}${digest}`;
 
   const message = pipe(
