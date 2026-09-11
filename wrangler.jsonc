@@ -1,0 +1,22 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "proofstamp-solana-api",
+  "main": "worker/index.mjs",
+  "compatibility_date": "2026-09-11",
+  "compatibility_flags": ["nodejs_compat"],
+  "vars": {
+    "SOLANA_RPC_URL": "https://api.devnet.solana.com",
+    "SOLANA_EXPECTED_GENESIS_HASH": "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",
+    "SUBMISSION_ENABLED": "false",
+    "DAILY_TRANSACTION_CAP": "250",
+    "REQUESTS_PER_5_MINUTES": "12"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "proofstamp-solana-devnet",
+      "database_id": "REPLACE_AFTER_WRANGLER_D1_CREATE",
+      "migrations_dir": "migrations"
+    }
+  ]
+}

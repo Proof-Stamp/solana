@@ -1,0 +1,9 @@
+# Worker local development. Copy to .dev.vars and fill the keypair.
+SOLANA_RPC_URL="https://api.devnet.solana.com"
+SOLANA_EXPECTED_GENESIS_HASH="EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG"
+SOLANA_FEE_PAYER_SECRET="[64-byte Solana CLI keypair JSON array]"
+SUBMISSION_ENABLED="true"
+ALLOWED_ORIGIN="http://localhost:5173"
+RATE_LIMIT_SALT="replace-with-random-secret"
+DAILY_TRANSACTION_CAP="250"
+REQUESTS_PER_5_MINUTES="12"
