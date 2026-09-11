@@ -110,8 +110,10 @@ export default function App() {
   const [customRpc, setCustomRpc] = useState('');
 
   const createPollCancelled = useRef(false);
-  const canStamp =
-    !!createFile && createState !== 'hashing' && createState !== 'submitting' && createState !== 'waiting';
+  const createBusy = createState === 'hashing' || createState === 'submitting' || createState === 'waiting';
+  const createProgressStep =
+    createState === 'hashing' ? 0 : createState === 'submitting' ? 1 : createState === 'waiting' ? 2 : -1;
+  const canStamp = !!createFile && !createBusy && createState !== 'ready';
   const canCheck = !!checkFile && !!receiptInput.trim() && checkState !== 'checking';
   const pendingOnLoad = useMemo(() => loadPendingStamp(), []);
 
@@ -137,6 +139,17 @@ export default function App() {
         : 'A previous ProofStamp request was interrupted. You can recover it below.',
     );
   }, [pendingOnLoad, createState]);
+
+  function handleCreateFile(file: File | null) {
+    setCreateFile(file);
+    setCreateState('idle');
+    setCreateMessage('');
+    setCreateHash('');
+    setSubmission(null);
+    setChainRecord(null);
+    setReceiptText('');
+    setCopied(false);
+  }
 
   async function waitForFinalized(signature: string, expectedHash: string): Promise<ChainRecord> {
     let lastPendingError: VerificationError | null = null;
@@ -313,7 +326,7 @@ export default function App() {
         </div>
 
         {view === 'stamp' ? (
-          <section className="card" aria-labelledby="stamp-title">
+          <section className="card" aria-labelledby="stamp-title" aria-busy={createBusy}>
             <div className="card-heading">
               <span className="proof-point" aria-hidden="true" />
               <div>
@@ -322,18 +335,33 @@ export default function App() {
               </div>
             </div>
 
-            <label className="file-picker">
-              <span>{createFile ? createFile.name : 'Choose file'}</span>
-              <input
-                type="file"
-                onChange={(event) => {
-                  setCreateFile(event.target.files?.[0] ?? null);
-                  setCreateState('idle');
-                  setCreateMessage('');
-                }}
-              />
-            </label>
-            {createFile && <p className="file-meta">{formatBytes(createFile.size)} · {createFile.type || 'unknown media type'}</p>}
+            {createFile ? (
+              <div className="selected-file">
+                <div className="selected-file-row">
+                  <span className="selected-file-name" title={createFile.name}>{createFile.name}</span>
+                  <label className={`file-change-button${createBusy ? ' is-disabled' : ''}`}>
+                    Choose another file
+                    <input
+                      className="visually-hidden"
+                      type="file"
+                      disabled={createBusy}
+                      onChange={(event) => handleCreateFile(event.target.files?.[0] ?? null)}
+                    />
+                  </label>
+                </div>
+                <p className="file-meta">{formatBytes(createFile.size)} · {createFile.type || 'unknown media type'}</p>
+              </div>
+            ) : (
+              <label className="file-picker">
+                <span>Choose file</span>
+                <span className="file-picker-note">Nothing is uploaded</span>
+                <input
+                  className="visually-hidden"
+                  type="file"
+                  onChange={(event) => handleCreateFile(event.target.files?.[0] ?? null)}
+                />
+              </label>
+            )}
 
             <button className="primary-button" disabled={!canStamp} onClick={handleStamp}>
               {createState === 'hashing'
@@ -342,8 +370,24 @@ export default function App() {
                   ? 'Recording…'
                   : createState === 'waiting'
                     ? 'Waiting for confirmation…'
-                    : 'Create ProofStamp'}
+                    : createState === 'ready'
+                      ? 'ProofStamp created ✓'
+                      : 'Create ProofStamp'}
             </button>
+
+            {createProgressStep >= 0 && (
+              <div className="creation-progress" aria-hidden="true">
+                {['Hash file', 'Record on Solana', 'Confirm public record'].map((label, index) => (
+                  <div
+                    className={`progress-step${index < createProgressStep ? ' done' : ''}${index === createProgressStep ? ' active' : ''}`}
+                    key={label}
+                  >
+                    <span className="progress-marker">{index < createProgressStep ? '✓' : index + 1}</span>
+                    <span>{label}</span>
+                  </div>
+                ))}
+              </div>
+            )}
 
             {submission && createState !== 'ready' && (
               <details className="details-block">
