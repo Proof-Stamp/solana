@@ -4,8 +4,8 @@ This checklist separates source readiness from deployment and GitHub administrat
 
 ## 1. Source and protocol
 
-- [ ] Review the final PR diff against `main`.
-- [ ] CI passes on the exact commit intended for release.
+- [x] Review the final PR diff against `main`.
+- [x] CI passes on the exact commit intended for release.
 - [x] `package-lock.json` is committed and CI uses `npm ci --ignore-scripts`.
 - [x] The reachable `main` Git history has been checked for obvious fee-payer keys, private RPC credentials, and other secret-like material without printing candidate values.
 - [ ] The dedicated devnet fee payer is rotated if there is any uncertainty about prior exposure outside Git history, such as logs, screenshots, issues, or chat transcripts.
