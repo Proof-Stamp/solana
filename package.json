@@ -10,12 +10,11 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "worker:dev": "wrangler dev --config wrangler.jsonc",
-    "worker:deploy": "wrangler deploy --config wrangler.jsonc",
-    "worker:types": "wrangler types --config wrangler.jsonc"
+    "pages:dev": "wrangler pages dev dist",
+    "pages:deploy": "wrangler pages deploy dist"
   },
   "engines": {
-    "node": ">=22.13.0",
+    "node": ">=24.15.0",
     "npm": ">=12.0.2"
   },
   "dependencies": {
