@@ -57,7 +57,7 @@ The tradeoff is deliberate: v1 does not provide exactly-once submission or serve
 
 ## Local setup
 
-Requirements: Node 22.13+ and npm 12.0.2+.
+Requirements: Node 24.15+ and npm 12.0.2+.
 
 ```bash
 npm install --global npm@12.0.2
@@ -87,6 +87,8 @@ Build command: npm install --global npm@12.0.2 && npm install --ignore-scripts &
 Build output directory: dist
 Root directory: /
 ```
+
+The repository pins Node 24.15.0 in `.nvmrc`, which is compatible with npm 12.0.2. `wrangler.jsonc` is configured for Pages with `pages_build_output_dir: "dist"`.
 
 The repository contains `functions/api/stamps.mjs`, so Cloudflare Pages exposes the submission endpoint at `/api/stamps`. `public/_routes.json` limits Pages Functions routing to `/api/*`.
 
