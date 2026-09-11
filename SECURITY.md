@@ -2,6 +2,10 @@
 
 ProofStamp via Solana is a Solana **devnet prototype**. Do not reuse its fee-payer key for mainnet, another environment, or any wallet holding valuable assets.
 
+## Reporting security issues
+
+Please do not publish a suspected vulnerability, exposed credential, or exploit in a public issue before it has been reviewed. If GitHub private vulnerability reporting is enabled for this repository, use **Security → Report a vulnerability**. Otherwise contact ProofStamp through https://proofstamp.org/contact-us/ and include enough detail to reproduce the issue.
+
 ## Submission boundary
 
 `POST /api/stamps` accepts exactly three JSON fields:
