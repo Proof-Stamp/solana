@@ -99,13 +99,20 @@ VITE_SOLANA_RPC_URL=https://api.devnet.solana.com
 SOLANA_RPC_URL=https://api.devnet.solana.com
 SOLANA_EXPECTED_GENESIS_HASH=EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG
 SUBMISSION_ENABLED=false
-ALLOWED_ORIGIN=https://<your-pages-or-custom-domain>
 ```
 
 Add this as a secret, not a public build variable:
 
 ```text
 SOLANA_FEE_PAYER_SECRET=<64-byte Solana CLI keypair JSON array or base64>
+```
+
+`ALLOWED_ORIGIN` is **not required on Cloudflare Pages** when the frontend and `/api/stamps` run on the same origin. The server accepts the request origin when it matches the Pages Function origin automatically. This also works for Cloudflare preview deployments and custom domains without changing configuration.
+
+For local development where the Vite frontend and Worker run on different ports, set:
+
+```text
+ALLOWED_ORIGIN=http://localhost:5173
 ```
 
 No D1 binding is required.
