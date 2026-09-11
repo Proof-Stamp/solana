@@ -1,7 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "proofstamp-solana-api",
-  "main": "worker/index.mjs",
+  "name": "proofstamp-solana",
+  "pages_build_output_dir": "dist",
   "compatibility_date": "2026-09-11",
   "compatibility_flags": ["nodejs_compat"],
   "vars": {
