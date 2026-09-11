@@ -27,7 +27,10 @@ async function parseResponse(response: Response): Promise<StampSubmission> {
 
   if (!response.ok) {
     const message = body?.error || `Submission service returned HTTP ${response.status}.`;
-    if (response.status >= 500) {
+    const creationDefinitelyDisabled =
+      response.status === 503 && /creation is temporarily disabled/i.test(message);
+
+    if (response.status >= 500 && !creationDefinitelyDisabled) {
       throw new SubmissionOutcomeUnknownError(
         `${message} The request may already have reached Solana, so it will not be retried automatically.`,
       );
