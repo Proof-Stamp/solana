@@ -1,6 +1,9 @@
-import process from 'node:process';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+
+declare const process: {
+  env: Record<string, string | undefined>;
+};
 
 const buildSha = process.env.CF_PAGES_COMMIT_SHA || process.env.GITHUB_SHA || 'local';
 const deploymentUrl = process.env.CF_PAGES_URL || '';
