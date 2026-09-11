@@ -34,6 +34,13 @@ function rpcResult(result: unknown): Response {
   });
 }
 
+function rpcError(message: string): Response {
+  return new Response(JSON.stringify({ jsonrpc: '2.0', id: 1, error: { code: -32000, message } }), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+  });
+}
+
 function transaction(overrides: Record<string, unknown> = {}) {
   return {
     slot: 123456,
@@ -84,6 +91,38 @@ describe('fetchChainRecord', () => {
     });
   });
 
+  it('validates a v0 transaction whose Memo program is in loaded addresses', async () => {
+    const tx = transaction({
+      version: 0,
+      meta: {
+        err: null,
+        loadedAddresses: { writable: [], readonly: [MEMO_PROGRAM_ID] },
+      },
+      transaction: {
+        signatures: [SIGNATURE],
+        message: {
+          accountKeys: ['11111111111111111111111111111111'],
+          instructions: [
+            {
+              programIdIndex: 1,
+              accounts: [],
+              data: encodeBase58(new TextEncoder().encode(MEMO)),
+            },
+          ],
+        },
+      },
+    });
+
+    fetchMock
+      .mockResolvedValueOnce(rpcResult(DEVNET_GENESIS_HASH))
+      .mockResolvedValueOnce(rpcResult(tx));
+
+    await expect(fetchChainRecord(SIGNATURE, 0)).resolves.toMatchObject({
+      program: MEMO_PROGRAM_ID,
+      sha256: HASH,
+    });
+  });
+
   it('reports a missing finalized record separately', async () => {
     fetchMock
       .mockResolvedValueOnce(rpcResult(DEVNET_GENESIS_HASH))
@@ -112,6 +151,50 @@ describe('fetchChainRecord', () => {
     });
   });
 
+  it('rejects an unsupported transaction version', async () => {
+    fetchMock
+      .mockResolvedValueOnce(rpcResult(DEVNET_GENESIS_HASH))
+      .mockResolvedValueOnce(rpcResult(transaction({ version: 1 })));
+
+    await expect(fetchChainRecord(SIGNATURE, 0)).rejects.toMatchObject({
+      code: 'unsupported_transaction',
+    });
+  });
+
+  it('maps an RPC unsupported-version error distinctly', async () => {
+    fetchMock
+      .mockResolvedValueOnce(rpcResult(DEVNET_GENESIS_HASH))
+      .mockResolvedValueOnce(rpcError('Unsupported transaction version'));
+
+    await expect(fetchChainRecord(SIGNATURE, 0)).rejects.toMatchObject({
+      code: 'unsupported_transaction',
+    });
+  });
+
+  it('requires the requested transaction signature to match the returned transaction', async () => {
+    const tx = transaction({
+      transaction: {
+        signatures: ['3'.repeat(88)],
+        message: {
+          accountKeys: [MEMO_PROGRAM_ID],
+          instructions: [
+            {
+              programIdIndex: 0,
+              accounts: [],
+              data: encodeBase58(new TextEncoder().encode(MEMO)),
+            },
+          ],
+        },
+      },
+    });
+
+    fetchMock
+      .mockResolvedValueOnce(rpcResult(DEVNET_GENESIS_HASH))
+      .mockResolvedValueOnce(rpcResult(tx));
+
+    await expect(fetchChainRecord(SIGNATURE, 0)).rejects.toMatchObject({ code: 'invalid_record' });
+  });
+
   it('requires the receipt instruction index to point to the ProofStamp memo', async () => {
     fetchMock
       .mockResolvedValueOnce(rpcResult(DEVNET_GENESIS_HASH))
@@ -120,6 +203,41 @@ describe('fetchChainRecord', () => {
     await expect(fetchChainRecord(SIGNATURE, 1)).rejects.toMatchObject({
       code: 'invalid_record',
     });
+  });
+
+  it('rejects the wrong instruction program even if the data looks like ProofStamp', async () => {
+    const tx = transaction({
+      transaction: {
+        signatures: [SIGNATURE],
+        message: {
+          accountKeys: ['11111111111111111111111111111111'],
+          instructions: [
+            {
+              programIdIndex: 0,
+              accounts: [],
+              data: encodeBase58(new TextEncoder().encode(MEMO)),
+            },
+          ],
+        },
+      },
+    });
+
+    fetchMock
+      .mockResolvedValueOnce(rpcResult(DEVNET_GENESIS_HASH))
+      .mockResolvedValueOnce(rpcResult(tx));
+
+    await expect(fetchChainRecord(SIGNATURE, 0)).rejects.toMatchObject({ code: 'invalid_record' });
+  });
+
+  it('rejects malformed Memo instruction data', async () => {
+    const tx = transaction();
+    tx.transaction.message.instructions[0].data = '0';
+
+    fetchMock
+      .mockResolvedValueOnce(rpcResult(DEVNET_GENESIS_HASH))
+      .mockResolvedValueOnce(rpcResult(tx));
+
+    await expect(fetchChainRecord(SIGNATURE, 0)).rejects.toMatchObject({ code: 'invalid_record' });
   });
 
   it('rejects ambiguous transactions containing more than one ProofStamp memo', async () => {
@@ -133,6 +251,14 @@ describe('fetchChainRecord', () => {
 
     await expect(fetchChainRecord(SIGNATURE)).rejects.toMatchObject({
       code: 'invalid_record',
+    });
+  });
+
+  it('reports an unavailable RPC separately', async () => {
+    fetchMock.mockRejectedValue(new TypeError('network unavailable'));
+
+    await expect(fetchChainRecord(SIGNATURE, 0)).rejects.toMatchObject({
+      code: 'rpc_unavailable',
     });
   });
 });
