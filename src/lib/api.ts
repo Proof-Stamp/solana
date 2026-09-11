@@ -4,7 +4,7 @@ export interface StampSubmission {
   requestId: string;
   sha256: string;
   signature: string | null;
-  status: 'submitted';
+  status: 'building' | 'submitted';
   lastValidBlockHeight: number | null;
 }
 
