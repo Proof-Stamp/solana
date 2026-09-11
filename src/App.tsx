@@ -1,5 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { submitStamp, type StampSubmission } from './lib/api';
+import { useEffect, useRef, useState } from 'react';
+import {
+  SubmissionOutcomeUnknownError,
+  submitStamp,
+  type StampSubmission,
+} from './lib/api';
 import {
   APP_VERSION,
   DEVNET_GENESIS_HASH,
@@ -11,8 +15,13 @@ import {
 } from './lib/config';
 import { FileTooLargeError, sha256File } from './lib/hash';
 import { formatReceipt, parseReceipt, type ProofStampReceipt } from './lib/receipt';
-import { fetchChainRecord, VerificationError, type ChainRecord } from './lib/rpc';
-import { clearPendingStamp, loadPendingStamp, savePendingStamp } from './lib/storage';
+import {
+  fetchBlockHeight,
+  fetchChainRecord,
+  fetchSignatureStatus,
+  VerificationError,
+  type ChainRecord,
+} from './lib/rpc';
 
 type View = 'stamp' | 'check';
 type CreateState = 'idle' | 'hashing' | 'submitting' | 'waiting' | 'ready' | 'error';
@@ -61,6 +70,7 @@ function receiptFromRecord(record: ChainRecord): ProofStampReceipt {
 
 function metadataDiffers(receipt: ProofStampReceipt, chain: ChainRecord): boolean {
   return (
+    receipt.network !== NETWORK_LABEL ||
     receipt.genesisHash !== chain.genesisHash ||
     receipt.program !== chain.program ||
     receipt.sha256 !== chain.sha256 ||
@@ -76,7 +86,13 @@ function userMessageForError(error: unknown): string {
   if (error instanceof VerificationError) {
     switch (error.code) {
       case 'pending':
-        return 'The public record is not finalized yet. Try again shortly.';
+        return 'The public transaction is still confirming. Try again shortly.';
+      case 'record_not_found':
+        return 'No finalized Solana record was found for this transaction.';
+      case 'transaction_failed':
+        return 'The Solana transaction failed and did not create a ProofStamp.';
+      case 'expired':
+        return 'The submission expired before Solana recorded it. No ProofStamp was created.';
       case 'rpc_unavailable':
         return 'We cannot check the public record right now. Try again.';
       case 'wrong_network':
@@ -84,7 +100,7 @@ function userMessageForError(error: unknown): string {
       case 'unsupported_transaction':
         return 'This Solana transaction version is not supported by this ProofStamp checker.';
       case 'invalid_record':
-        return 'This is not a supported ProofStamp record.';
+        return 'This transaction is not a supported ProofStamp record.';
     }
   }
   if (error instanceof Error) return error.message;
@@ -101,6 +117,7 @@ export default function App() {
   const [chainRecord, setChainRecord] = useState<ChainRecord | null>(null);
   const [receiptText, setReceiptText] = useState('');
   const [copied, setCopied] = useState(false);
+  const [retryBlocked, setRetryBlocked] = useState(false);
 
   const [checkFile, setCheckFile] = useState<File | null>(null);
   const [receiptInput, setReceiptInput] = useState('');
@@ -113,32 +130,14 @@ export default function App() {
   const createBusy = createState === 'hashing' || createState === 'submitting' || createState === 'waiting';
   const createProgressStep =
     createState === 'hashing' ? 0 : createState === 'submitting' ? 1 : createState === 'waiting' ? 2 : -1;
-  const canStamp = !!createFile && !createBusy && createState !== 'ready';
+  const canStamp = !!createFile && !createBusy && createState !== 'ready' && !retryBlocked;
   const canCheck = !!checkFile && !!receiptInput.trim() && checkState !== 'checking';
-  const pendingOnLoad = useMemo(() => loadPendingStamp(), []);
 
   useEffect(() => {
     return () => {
       createPollCancelled.current = true;
     };
   }, []);
-
-  useEffect(() => {
-    if (!pendingOnLoad || createState !== 'idle') return;
-    setCreateHash(pendingOnLoad.sha256);
-    setSubmission({
-      requestId: pendingOnLoad.requestId,
-      sha256: pendingOnLoad.sha256,
-      signature: pendingOnLoad.signature,
-      status: pendingOnLoad.signature ? 'submitted' : 'building',
-      lastValidBlockHeight: null,
-    });
-    setCreateMessage(
-      pendingOnLoad.signature
-        ? 'A previous ProofStamp is still waiting for final confirmation. Reselect the original file to validate it after completion.'
-        : 'A previous ProofStamp request was interrupted. You can recover it below.',
-    );
-  }, [pendingOnLoad, createState]);
 
   function handleCreateFile(file: File | null) {
     setCreateFile(file);
@@ -149,28 +148,41 @@ export default function App() {
     setChainRecord(null);
     setReceiptText('');
     setCopied(false);
+    setRetryBlocked(false);
   }
 
-  async function waitForFinalized(signature: string, expectedHash: string): Promise<ChainRecord> {
-    let lastPendingError: VerificationError | null = null;
-    for (let attempt = 0; attempt < 45; attempt += 1) {
+  async function waitForFinalized(current: StampSubmission, expectedHash: string): Promise<ChainRecord> {
+    if (!current.signature) {
+      throw new Error('The submission service did not return a transaction signature.');
+    }
+
+    for (let attempt = 0; attempt < 90; attempt += 1) {
       if (createPollCancelled.current) throw new Error('Checking was cancelled.');
-      try {
-        const record = await fetchChainRecord(signature);
+
+      const status = await fetchSignatureStatus(current.signature);
+      if (status?.err != null) {
+        throw new VerificationError('transaction_failed', 'The Solana transaction failed.');
+      }
+
+      if (status?.confirmationStatus === 'finalized') {
+        const record = await fetchChainRecord(current.signature);
         if (record.sha256 !== expectedHash) {
           throw new Error('Public read-back returned a different SHA-256. Creation stopped.');
         }
         return record;
-      } catch (error) {
-        if (error instanceof VerificationError && error.code === 'pending') {
-          lastPendingError = error;
-          await new Promise((resolve) => setTimeout(resolve, 2000));
-          continue;
-        }
-        throw error;
       }
+
+      if (!status && current.lastValidBlockHeight !== null) {
+        const blockHeight = await fetchBlockHeight();
+        if (blockHeight > current.lastValidBlockHeight) {
+          throw new VerificationError('expired', 'The transaction was not found before its blockhash expired.');
+        }
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 2000));
     }
-    throw lastPendingError ?? new Error('The transaction is still waiting for final confirmation.');
+
+    throw new VerificationError('pending', 'The transaction is still waiting for final confirmation.');
   }
 
   async function finishSubmission(current: StampSubmission, expectedHash: string) {
@@ -180,20 +192,19 @@ export default function App() {
 
     setCreateState('waiting');
     setCreateMessage('Waiting for final confirmation…');
-    savePendingStamp({ requestId: current.requestId, sha256: expectedHash, signature: current.signature });
 
-    const record = await waitForFinalized(current.signature, expectedHash);
+    const record = await waitForFinalized(current, expectedHash);
     const formatted = formatReceipt(receiptFromRecord(record));
     setChainRecord(record);
     setReceiptText(formatted);
     setCreateState('ready');
     setCreateMessage('Your ProofStamp is ready.');
-    clearPendingStamp();
   }
 
   async function handleStamp() {
     if (!createFile) return;
     createPollCancelled.current = false;
+    setRetryBlocked(false);
     setCreateState('hashing');
     setCreateMessage('Creating SHA-256 on this device…');
     setChainRecord(null);
@@ -207,41 +218,14 @@ export default function App() {
       setCreateState('submitting');
       setCreateMessage('Recording your ProofStamp…');
 
-      const requestId = crypto.randomUUID();
-      savePendingStamp({ requestId, sha256: digest, signature: null });
-
-      let current: StampSubmission;
-      try {
-        current = await submitStamp(requestId, digest);
-      } catch (submitError) {
-        try {
-          current = await submitStamp(requestId, digest);
-        } catch {
-          throw submitError;
-        }
-      }
-
+      const current = await submitStamp(crypto.randomUUID(), digest);
       setSubmission(current);
-      savePendingStamp({ requestId, sha256: digest, signature: current.signature });
       await finishSubmission(current, digest);
     } catch (error) {
       setCreateState('error');
-      setCreateMessage(userMessageForError(error));
-    }
-  }
-
-  async function handleRecover() {
-    const pending = loadPendingStamp();
-    if (!pending) return;
-    setCreateState('submitting');
-    setCreateMessage('Recovering the previous request…');
-    try {
-      const current = await submitStamp(pending.requestId, pending.sha256);
-      setSubmission(current);
-      savePendingStamp({ requestId: current.requestId, sha256: pending.sha256, signature: current.signature });
-      await finishSubmission(current, pending.sha256);
-    } catch (error) {
-      setCreateState('error');
+      if (error instanceof SubmissionOutcomeUnknownError) {
+        setRetryBlocked(true);
+      }
       setCreateMessage(userMessageForError(error));
     }
   }
@@ -364,15 +348,17 @@ export default function App() {
             )}
 
             <button className="primary-button" disabled={!canStamp} onClick={handleStamp}>
-              {createState === 'hashing'
-                ? 'Creating SHA-256…'
-                : createState === 'submitting'
-                  ? 'Recording…'
-                  : createState === 'waiting'
-                    ? 'Waiting for confirmation…'
-                    : createState === 'ready'
-                      ? 'ProofStamp created ✓'
-                      : 'Create ProofStamp'}
+              {retryBlocked
+                ? 'Submission outcome unknown'
+                : createState === 'hashing'
+                  ? 'Creating SHA-256…'
+                  : createState === 'submitting'
+                    ? 'Recording…'
+                    : createState === 'waiting'
+                      ? 'Waiting for confirmation…'
+                      : createState === 'ready'
+                        ? 'ProofStamp created ✓'
+                        : 'Create ProofStamp'}
             </button>
 
             {createProgressStep >= 0 && (
@@ -406,10 +392,6 @@ export default function App() {
             )}
 
             {createMessage && <div className={`status status-${createState}`} role="status" aria-live="polite">{createMessage}</div>}
-
-            {createState === 'error' && loadPendingStamp() && (
-              <button className="secondary-button" onClick={handleRecover}>Recover previous request</button>
-            )}
 
             {createHash && (
               <details className="details-block">
@@ -471,7 +453,7 @@ export default function App() {
               <summary>Advanced: use another devnet RPC</summary>
               <label className="field-label" htmlFor="custom-rpc">HTTPS RPC URL</label>
               <input id="custom-rpc" className="text-input" type="url" inputMode="url" placeholder="https://…" value={customRpc} onChange={(event) => setCustomRpc(event.target.value)} />
-              <p className="help-text">The app still checks the RPC genesis hash before trusting the result.</p>
+              <p className="help-text">The app checks the RPC genesis hash, but verification still depends on the RPC returning accurate Solana history.</p>
             </details>
 
             <button className="primary-button" disabled={!canCheck} onClick={handleCheck}>{checkState === 'checking' ? 'Checking…' : 'Check ProofStamp'}</button>
