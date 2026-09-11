@@ -15,7 +15,7 @@ proofstamp:v1:sha256:<digest>
      |
      | POST digest + requestId only
      v
-restricted devnet fee payer -> Solana Memo
+Cloudflare Pages Function -> restricted devnet fee payer -> Solana Memo
      |
      | independent browser read-back at finalized
      v
@@ -44,17 +44,18 @@ The app currently accepts legacy and v0 transactions during verification and req
 
 ## Architecture
 
-- React + TypeScript + Vite frontend
+- React + TypeScript + Vite frontend hosted on Cloudflare Pages
 - Web Crypto SHA-256 in the browser
 - independent browser JSON-RPC verification
-- Cloudflare Worker for restricted transaction construction/signing
+- Cloudflare Pages Function at `/api/stamps` for restricted transaction construction/signing
+- shared server implementation in `worker/index.mjs`
 - Cloudflare D1 for the 24-hour recovery journal, global budget, and short-lived abuse-control buckets
 - `@solana/kit` 8.3.0 and `@solana-program/memo` 0.13.1 for the server transaction path
 - operator-controlled devnet fee payer; ZeroDev deliberately deferred
 
 This implementation follows the v0.1 review/implementation plan and reuses the ProofStamp product posture from the Arbitrum prototype while replacing wallet/EAS logic with a simple Solana Memo record.
 
-## Frontend setup
+## Local frontend setup
 
 Requirements: Node 22.13+ and npm 12.0.2+.
 
@@ -72,45 +73,51 @@ Public frontend configuration:
 ```text
 VITE_SOLANA_RPC_URL=https://api.devnet.solana.com
 VITE_SOLANA_RPC_FALLBACK_URL=
-VITE_SUBMIT_API_BASE=http://localhost:8787
+VITE_SUBMIT_API_BASE=
 ```
+
+On Cloudflare Pages, leave `VITE_SUBMIT_API_BASE` empty so the frontend uses the same-origin `/api/stamps` Pages Function. For local frontend-only development, set it to a local API origin if needed.
 
 If a second reviewed devnet RPC is available, set it as `VITE_SOLANA_RPC_FALLBACK_URL`. Do not put private RPC credentials into a Vite variable.
 
-## Worker and D1 setup
+## Cloudflare Pages deployment
 
-1. Create a D1 database:
+Use one Cloudflare Pages project for the Vite frontend and the `/api/stamps` Pages Function.
 
-```bash
-npx wrangler d1 create proofstamp-solana-devnet
+Recommended Git deployment settings:
+
+```text
+Repository: Proof-Stamp/solana
+Production branch: main
+Build command: npm install --global npm@12.0.2 && npm install --ignore-scripts && npm run build
+Build output directory: dist
+Root directory: /
 ```
 
-2. Put the returned database ID into `wrangler.jsonc`.
+The repository contains `functions/api/stamps.mjs`, so Cloudflare Pages exposes the submission endpoint at `/api/stamps`. `public/_routes.json` limits Pages Functions routing to `/api/*`; the rest is static Pages content.
 
-3. Apply the migration:
+### D1 and server bindings
 
-```bash
-npx wrangler d1 migrations apply proofstamp-solana-devnet --remote
+1. Create a D1 database named `proofstamp-solana-devnet`.
+2. Bind it to the Pages project as `DB`.
+3. Apply `migrations/0001_init.sql` to that database.
+4. Create a **dedicated devnet-only** Solana keypair and fund it with a small amount of devnet SOL.
+5. Configure these Pages environment variables/secrets:
+
+```text
+SOLANA_RPC_URL=https://api.devnet.solana.com
+SOLANA_EXPECTED_GENESIS_HASH=EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG
+SUBMISSION_ENABLED=false
+DAILY_TRANSACTION_CAP=250
+REQUESTS_PER_5_MINUTES=12
+SOLANA_FEE_PAYER_SECRET=<secret>
+RATE_LIMIT_SALT=<secret>
+ALLOWED_ORIGIN=https://<your-pages-or-custom-domain>
 ```
 
-4. Create a **dedicated devnet-only** Solana keypair and fund it with a small amount of devnet SOL. A Solana CLI keypair JSON array contains 64 bytes and can be used directly as the secret value.
+Keep `SUBMISSION_ENABLED=false` for the first deployment. Verification should work without enabling the fee payer. Enable creation only after the devnet preflight succeeds and the signer is funded.
 
-5. Configure Worker secrets:
-
-```bash
-npx wrangler secret put SOLANA_FEE_PAYER_SECRET
-npx wrangler secret put RATE_LIMIT_SALT
-npx wrangler secret put ALLOWED_ORIGIN
-```
-
-6. Keep creation disabled until the key is funded and the network check succeeds. Then set `SUBMISSION_ENABLED=true` in the Worker environment and deploy.
-
-For local Worker development:
-
-```bash
-cp .dev.vars.example .dev.vars
-npm run worker:dev
-```
+`wrangler.jsonc` remains useful for local/server-side testing, but a separate production Worker deployment is not required when using Pages Functions.
 
 ## Preflight network check
 
@@ -132,9 +139,9 @@ A devnet reset requires a reviewed config update rather than silently trusting a
 
 Each random request ID is bound to one digest. Retrying the same ID never intentionally creates a fresh proof.
 
-The Worker persists the signed transaction and signature before broadcasting. When a response is lost, it checks the existing signature and can rebroadcast the **same signed transaction** while its blockhash remains valid. If expiry is reached and history cannot establish whether the transaction landed, the request becomes `uncertain`; the service does not blindly create a second transaction.
+The service persists the signed transaction and signature before broadcasting. When a response is lost, it checks the existing signature and can rebroadcast the **same signed transaction** while its blockhash remains valid. If expiry is reached and history cannot establish whether the transaction landed, the request becomes `uncertain`; the service does not blindly create a second transaction.
 
-The request journal is operational state, not proof. Existing receipts are checked directly against Solana RPC and do not require the submission Worker.
+The request journal is operational state, not proof. Existing receipts are checked directly against Solana RPC and do not require the submission service.
 
 ## Receipt and verification
 
@@ -161,7 +168,7 @@ During later checking, the public transaction is authoritative. A matching file 
 - no permanent-record claim because Solana devnet can reset
 - no custom Solana program
 - no ZeroDev in v0.1
-- no file, filename, or arbitrary transaction payload accepted by the Worker
+- no file, filename, or arbitrary transaction payload accepted by the server path
 
 See [PRIVACY.md](PRIVACY.md) and [SECURITY.md](SECURITY.md).
 
