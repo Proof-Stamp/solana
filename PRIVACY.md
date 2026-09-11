@@ -14,11 +14,11 @@ The browser later reads the public Solana transaction through an RPC endpoint. T
 
 ## Submission service
 
-The devnet submission service processes the digest and request metadata needed to construct and recover a sponsored Solana transaction. For abuse controls it derives a short-lived salted hash from the connecting IP address. It does not store the raw IP address in the application database.
+The Cloudflare Pages Function receives the digest and request ID, constructs a fixed Memo transaction, signs it with the dedicated devnet fee payer, and submits it to the configured Solana RPC.
 
-The D1 request journal stores request ID, digest, signed transaction bytes, transaction signature, status, block-height expiry information, and timestamps for approximately 24 hours. Signed transaction bytes contain the public fee-payer address and public ProofStamp Memo. They do not contain the fee-payer private key.
+v1 has no application database or recovery journal. ProofStamp does not intentionally store the request ID, digest, signed transaction bytes, filename, or original file in application storage. Cloudflare and the configured Solana RPC provider may maintain their own infrastructure logs and retention policies.
 
-Cloudflare and the configured Solana RPC provider may maintain their own infrastructure logs and retention policies. Do not claim that the service has “no API”, “no backend”, or “no stored data”.
+Do not claim that the service has “no API”, “no backend”, or “no stored data”. The application does use a server-side submission endpoint, and infrastructure providers may retain operational logs.
 
 ## Public data
 
