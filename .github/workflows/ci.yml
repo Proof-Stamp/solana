@@ -21,4 +21,6 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: node --check worker/index.mjs
+      - run: node --check functions/api/stamps.mjs
       - run: node -e "import('./worker/index.mjs').then(() => console.log('worker imports ok'))"
+      - run: node -e "import('./functions/api/stamps.mjs').then(() => console.log('Pages function imports ok'))"
