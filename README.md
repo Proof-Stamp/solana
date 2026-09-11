@@ -56,9 +56,12 @@ This implementation follows the v0.1 review/implementation plan and reuses the P
 
 ## Frontend setup
 
-Requirements: Node 22.13+.
+Requirements: Node 22.13+ and npm 12.0.2+.
+
+The Node 22 GitHub runner currently ships an npm 10 release that fails while resolving this fresh Solana package graph, so this repo pins the tested install path to npm 12.0.2.
 
 ```bash
+npm install --global npm@12.0.2
 npm install
 cp .env.example .env.local
 npm run dev
