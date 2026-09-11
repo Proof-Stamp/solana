@@ -19,6 +19,8 @@ const SHA256_RE = /^[0-9a-f]{64}$/;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const BASE58_RE = /^[1-9A-HJ-NP-Za-km-z]+$/;
 const PROTOCOL_PREFIX = 'proofstamp:v1:sha256:';
+const MAX_REQUEST_BYTES = 1024;
+const REQUEST_FIELDS = new Set(['protocolVersion', 'requestId', 'sha256']);
 
 function json(body, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(body), {
@@ -86,7 +88,7 @@ async function assertDevnet(env) {
   }
   const genesisHash = await rpcCall(env, 'getGenesisHash');
   if (genesisHash !== env.SOLANA_EXPECTED_GENESIS_HASH) {
-    throw new Error(`RPC genesis hash mismatch. Expected ${env.SOLANA_EXPECTED_GENESIS_HASH}.`);
+    throw new Error('Configured RPC is not the expected Solana devnet.');
   }
   return genesisHash;
 }
@@ -186,11 +188,16 @@ async function createStamp(request, env, cors) {
     );
   }
 
+  const contentType = request.headers.get('content-type') || '';
+  if (!/^application\/json(?:\s*;|$)/i.test(contentType)) {
+    return json({ error: 'Content-Type must be application/json.' }, 415, cors);
+  }
+
   const contentLength = Number(request.headers.get('content-length') || '0');
-  if (contentLength > 1024) return json({ error: 'Request body is too large.' }, 413, cors);
+  if (contentLength > MAX_REQUEST_BYTES) return json({ error: 'Request body is too large.' }, 413, cors);
 
   const text = await request.text();
-  if (new TextEncoder().encode(text).length > 1024) {
+  if (new TextEncoder().encode(text).length > MAX_REQUEST_BYTES) {
     return json({ error: 'Request body is too large.' }, 413, cors);
   }
 
@@ -201,7 +208,14 @@ async function createStamp(request, env, cors) {
     return json({ error: 'Request body must be valid JSON.' }, 400, cors);
   }
 
-  const { protocolVersion, requestId, sha256 } = body ?? {};
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return json({ error: 'Request body must be a JSON object.' }, 400, cors);
+  }
+  if (Object.keys(body).some((key) => !REQUEST_FIELDS.has(key))) {
+    return json({ error: 'Request contains unsupported fields.' }, 400, cors);
+  }
+
+  const { protocolVersion, requestId, sha256 } = body;
   if (protocolVersion !== 1) return json({ error: 'Unsupported protocol version.' }, 400, cors);
   if (typeof requestId !== 'string' || !UUID_RE.test(requestId)) {
     return json({ error: 'requestId must be a UUID v4.' }, 400, cors);
@@ -249,11 +263,8 @@ export default {
       if (request.method === 'POST') return await createStamp(request, env, cors);
       return json({ error: 'Method not allowed.' }, 405, { ...cors, allow: 'POST, OPTIONS' });
     } catch (error) {
-      return json(
-        { error: error instanceof Error ? error.message : 'Submission service error.' },
-        500,
-        cors,
-      );
+      console.error('ProofStamp submission error', error);
+      return json({ error: 'Submission service error.' }, 500, cors);
     }
   },
 };
