@@ -32,7 +32,14 @@ function json(body, status = 200, extraHeaders = {}) {
 function corsHeaders(request, env) {
   const origin = request.headers.get('origin');
   if (!origin) return {};
-  if (!env.ALLOWED_ORIGIN || origin !== env.ALLOWED_ORIGIN) return null;
+
+  const requestOrigin = new URL(request.url).origin;
+  const configuredOrigin = env.ALLOWED_ORIGIN?.trim();
+  const isSameOrigin = origin === requestOrigin;
+  const isConfiguredOrigin = !!configuredOrigin && origin === configuredOrigin;
+
+  if (!isSameOrigin && !isConfiguredOrigin) return null;
+
   return {
     'access-control-allow-origin': origin,
     'access-control-allow-methods': 'POST,OPTIONS',
