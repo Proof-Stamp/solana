@@ -6,17 +6,18 @@ This checklist separates source readiness from deployment and GitHub administrat
 
 - [ ] Review the final PR diff against `main`.
 - [ ] CI passes on the exact commit intended for release.
-- [ ] `package-lock.json` is committed and CI uses `npm ci --ignore-scripts`.
-- [ ] The full Git history has been checked for fee-payer keys, private RPC credentials, and other secrets.
-- [ ] The dedicated devnet fee payer is rotated if there is any uncertainty about prior exposure.
-- [ ] `wrangler.jsonc` keeps `SUBMISSION_ENABLED=false` as the repository default.
+- [x] `package-lock.json` is committed and CI uses `npm ci --ignore-scripts`.
+- [x] The reachable `main` Git history has been checked for obvious fee-payer keys, private RPC credentials, and other secret-like material without printing candidate values.
+- [ ] The dedicated devnet fee payer is rotated if there is any uncertainty about prior exposure outside Git history, such as logs, screenshots, issues, or chat transcripts.
+- [x] `wrangler.jsonc` keeps `SUBMISSION_ENABLED=false` as the repository default.
 
 ## 2. Cloudflare deployment controls
 
 Complete these before enabling sponsored creation for public traffic:
 
 - [ ] Production and preview environments use only Solana devnet.
-- [ ] `SOLANA_FEE_PAYER_SECRET` is a Cloudflare secret, not a build variable or repository value.
+- [ ] Production `SOLANA_FEE_PAYER_SECRET` is a Cloudflare secret, not a build variable or repository value.
+- [ ] Preview deployments keep `SUBMISSION_ENABLED=false` and do not receive the production fee-payer secret unless there is a deliberate, separately reviewed reason.
 - [ ] The fee payer holds only a small amount of devnet SOL.
 - [ ] `/api/stamps` has an edge rate limit or equivalent abuse control.
 - [ ] The operator can disable creation quickly with `SUBMISSION_ENABLED=false`.
