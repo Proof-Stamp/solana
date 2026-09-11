@@ -74,7 +74,7 @@ Requirements: Node 24.15+ and npm 12.0.2+.
 
 ```bash
 npm install --global npm@12.0.2
-npm install
+npm ci --ignore-scripts
 cp .env.example .env.local
 npm run dev
 ```
@@ -96,12 +96,12 @@ Recommended Git deployment settings:
 ```text
 Repository: Proof-Stamp/solana
 Production branch: main
-Build command: npm install --global npm@12.0.2 && npm install --ignore-scripts && npm run build
+Build command: npm install --global npm@12.0.2 && npm ci --ignore-scripts && npm run build
 Build output directory: dist
 Root directory: /
 ```
 
-The repository pins Node 24.15.0 in `.nvmrc`. `wrangler.jsonc` is configured for Pages with `pages_build_output_dir: "dist"`.
+The repository pins Node 24.15.0 in `.nvmrc` and commits `package-lock.json` for reproducible installs. `wrangler.jsonc` is configured for Pages with `pages_build_output_dir: "dist"`.
 
 Cloudflare Pages automatically provides `CF_PAGES_COMMIT_SHA` and `CF_PAGES_URL` during builds. Vite embeds those values as `proofstamp-build` and `proofstamp-deployment` meta tags in the generated HTML so a deployed build can be tied back to source.
 
