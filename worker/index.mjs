@@ -14,7 +14,7 @@ import { getAddMemoInstruction } from '@solana-program/memo';
 
 const MEMO_PROGRAM_ID = 'MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr';
 const SHA256_RE = /^[0-9a-f]{64}$/;
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{12}$/i;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const PROTOCOL_PREFIX = 'proofstamp:v1:sha256:';
 
 function json(body, status = 200, extraHeaders = {}) {
