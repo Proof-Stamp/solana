@@ -21,6 +21,7 @@ import {
   fetchSignatureStatus,
   VerificationError,
   type ChainRecord,
+  type SignatureStatus,
 } from './lib/rpc';
 
 type View = 'stamp' | 'check';
@@ -107,6 +108,10 @@ function userMessageForError(error: unknown): string {
   return 'Something went wrong.';
 }
 
+function waitTwoSeconds(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 2000));
+}
+
 export default function App() {
   const [view, setView] = useState<View>('stamp');
   const [createFile, setCreateFile] = useState<File | null>(null);
@@ -156,33 +161,67 @@ export default function App() {
       throw new Error('The submission service did not return a transaction signature.');
     }
 
+    let lastTransientError: VerificationError | null = null;
+
     for (let attempt = 0; attempt < 90; attempt += 1) {
       if (createPollCancelled.current) throw new Error('Checking was cancelled.');
 
-      const status = await fetchSignatureStatus(current.signature);
+      let status: SignatureStatus | null;
+      try {
+        status = await fetchSignatureStatus(current.signature);
+      } catch (error) {
+        if (error instanceof VerificationError && error.code === 'rpc_unavailable') {
+          lastTransientError = error;
+          await waitTwoSeconds();
+          continue;
+        }
+        throw error;
+      }
+
       if (status?.err != null) {
         throw new VerificationError('transaction_failed', 'The Solana transaction failed.');
       }
 
       if (status?.confirmationStatus === 'finalized') {
-        const record = await fetchChainRecord(current.signature);
-        if (record.sha256 !== expectedHash) {
-          throw new Error('Public read-back returned a different SHA-256. Creation stopped.');
+        try {
+          const record = await fetchChainRecord(current.signature);
+          if (record.sha256 !== expectedHash) {
+            throw new Error('Public read-back returned a different SHA-256. Creation stopped.');
+          }
+          return record;
+        } catch (error) {
+          if (
+            error instanceof VerificationError &&
+            (error.code === 'record_not_found' || error.code === 'rpc_unavailable')
+          ) {
+            lastTransientError = error;
+            await waitTwoSeconds();
+            continue;
+          }
+          throw error;
         }
-        return record;
       }
 
       if (!status && current.lastValidBlockHeight !== null) {
-        const blockHeight = await fetchBlockHeight();
-        if (blockHeight > current.lastValidBlockHeight) {
-          throw new VerificationError('expired', 'The transaction was not found before its blockhash expired.');
+        try {
+          const blockHeight = await fetchBlockHeight();
+          if (blockHeight > current.lastValidBlockHeight) {
+            throw new VerificationError('expired', 'The transaction was not found before its blockhash expired.');
+          }
+        } catch (error) {
+          if (error instanceof VerificationError && error.code === 'rpc_unavailable') {
+            lastTransientError = error;
+            await waitTwoSeconds();
+            continue;
+          }
+          throw error;
         }
       }
 
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      await waitTwoSeconds();
     }
 
-    throw new VerificationError('pending', 'The transaction is still waiting for final confirmation.');
+    throw lastTransientError ?? new VerificationError('pending', 'The transaction is still waiting for final confirmation.');
   }
 
   async function finishSubmission(current: StampSubmission, expectedHash: string) {
@@ -485,7 +524,9 @@ export default function App() {
       <footer>
         <span>ProofStamp via Solana v{APP_VERSION}</span><span>·</span>
         <span className="mono short-hash">{DEVNET_GENESIS_HASH.slice(0, 8)}…</span><span>·</span>
-        <span className="mono short-hash">{MEMO_PROGRAM_ID.slice(0, 8)}…</span>
+        <span className="mono short-hash">{MEMO_PROGRAM_ID.slice(0, 8)}…</span><span>·</span>
+        <a href="https://github.com/Proof-Stamp/solana#v1-flow" target="_blank" rel="noreferrer">How it works</a><span>·</span>
+        <a href="https://github.com/Proof-Stamp/solana/blob/main/PRIVACY.md" target="_blank" rel="noreferrer">Privacy</a>
       </footer>
     </div>
   );
