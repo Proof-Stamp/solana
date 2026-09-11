@@ -4,6 +4,7 @@ import {
   submitStamp,
   type StampSubmission,
 } from './lib/api';
+import { waitForFinalizedProofStamp } from './lib/confirmation';
 import {
   APP_VERSION,
   DEVNET_GENESIS_HASH,
@@ -21,7 +22,6 @@ import {
   fetchSignatureStatus,
   VerificationError,
   type ChainRecord,
-  type SignatureStatus,
 } from './lib/rpc';
 
 type View = 'stamp' | 'check';
@@ -108,10 +108,6 @@ function userMessageForError(error: unknown): string {
   return 'Something went wrong.';
 }
 
-function waitTwoSeconds(): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, 2000));
-}
-
 export default function App() {
   const [view, setView] = useState<View>('stamp');
   const [createFile, setCreateFile] = useState<File | null>(null);
@@ -156,74 +152,6 @@ export default function App() {
     setRetryBlocked(false);
   }
 
-  async function waitForFinalized(current: StampSubmission, expectedHash: string): Promise<ChainRecord> {
-    if (!current.signature) {
-      throw new Error('The submission service did not return a transaction signature.');
-    }
-
-    let lastTransientError: VerificationError | null = null;
-
-    for (let attempt = 0; attempt < 90; attempt += 1) {
-      if (createPollCancelled.current) throw new Error('Checking was cancelled.');
-
-      let status: SignatureStatus | null;
-      try {
-        status = await fetchSignatureStatus(current.signature);
-      } catch (error) {
-        if (error instanceof VerificationError && error.code === 'rpc_unavailable') {
-          lastTransientError = error;
-          await waitTwoSeconds();
-          continue;
-        }
-        throw error;
-      }
-
-      if (status?.err != null) {
-        throw new VerificationError('transaction_failed', 'The Solana transaction failed.');
-      }
-
-      if (status?.confirmationStatus === 'finalized') {
-        try {
-          const record = await fetchChainRecord(current.signature);
-          if (record.sha256 !== expectedHash) {
-            throw new Error('Public read-back returned a different SHA-256. Creation stopped.');
-          }
-          return record;
-        } catch (error) {
-          if (
-            error instanceof VerificationError &&
-            (error.code === 'record_not_found' || error.code === 'rpc_unavailable')
-          ) {
-            lastTransientError = error;
-            await waitTwoSeconds();
-            continue;
-          }
-          throw error;
-        }
-      }
-
-      if (!status && current.lastValidBlockHeight !== null) {
-        try {
-          const blockHeight = await fetchBlockHeight();
-          if (blockHeight > current.lastValidBlockHeight) {
-            throw new VerificationError('expired', 'The transaction was not found before its blockhash expired.');
-          }
-        } catch (error) {
-          if (error instanceof VerificationError && error.code === 'rpc_unavailable') {
-            lastTransientError = error;
-            await waitTwoSeconds();
-            continue;
-          }
-          throw error;
-        }
-      }
-
-      await waitTwoSeconds();
-    }
-
-    throw lastTransientError ?? new VerificationError('pending', 'The transaction is still waiting for final confirmation.');
-  }
-
   async function finishSubmission(current: StampSubmission, expectedHash: string) {
     if (!current.signature) {
       throw new Error('The submission service did not return a transaction signature.');
@@ -232,7 +160,13 @@ export default function App() {
     setCreateState('waiting');
     setCreateMessage('Waiting for final confirmation…');
 
-    const record = await waitForFinalized(current, expectedHash);
+    const record = await waitForFinalizedProofStamp(current, expectedHash, {
+      getSignatureStatus: (signature) => fetchSignatureStatus(signature),
+      getBlockHeight: () => fetchBlockHeight(),
+      getChainRecord: (signature) => fetchChainRecord(signature),
+      sleep: () => new Promise((resolve) => setTimeout(resolve, 2000)),
+      isCancelled: () => createPollCancelled.current,
+    });
     const formatted = formatReceipt(receiptFromRecord(record));
     setChainRecord(record);
     setReceiptText(formatted);
