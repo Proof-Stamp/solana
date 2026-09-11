@@ -5,9 +5,12 @@ import { decodeProofStampMemo } from './protocol';
 export type VerificationErrorCode =
   | 'rpc_unavailable'
   | 'pending'
+  | 'record_not_found'
   | 'wrong_network'
   | 'unsupported_transaction'
-  | 'invalid_record';
+  | 'invalid_record'
+  | 'transaction_failed'
+  | 'expired';
 
 export class VerificationError extends Error {
   constructor(
@@ -55,6 +58,17 @@ interface TransactionResponse {
     };
   };
   version?: 'legacy' | number;
+}
+
+interface SignatureStatusesResponse {
+  value: Array<SignatureStatus | null>;
+}
+
+export interface SignatureStatus {
+  slot: number;
+  confirmations: number | null;
+  err: unknown;
+  confirmationStatus?: 'processed' | 'confirmed' | 'finalized' | null;
 }
 
 export interface ChainRecord {
@@ -106,6 +120,21 @@ async function rpcCall<T>(url: string, method: string, params: unknown[] = []): 
   }
 }
 
+async function assertExpectedNetwork(rpcUrl: string): Promise<string> {
+  let genesisHash: string;
+  try {
+    genesisHash = await rpcCall<string>(rpcUrl, 'getGenesisHash');
+  } catch (error) {
+    if (error instanceof VerificationError) throw error;
+    throw new VerificationError('rpc_unavailable', 'Could not read the Solana network identity.');
+  }
+
+  if (genesisHash !== DEVNET_GENESIS_HASH) {
+    throw new VerificationError('wrong_network', 'The selected RPC is not the configured Solana devnet.');
+  }
+  return genesisHash;
+}
+
 function decodeUtf8(bytes: Uint8Array): string {
   try {
     return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
@@ -119,17 +148,7 @@ async function verifyWithRpc(
   signature: string,
   expectedInstructionIndex?: number,
 ): Promise<ChainRecord> {
-  let genesisHash: string;
-  try {
-    genesisHash = await rpcCall<string>(rpcUrl, 'getGenesisHash');
-  } catch (error) {
-    if (error instanceof VerificationError) throw error;
-    throw new VerificationError('rpc_unavailable', 'Could not read the Solana network identity.');
-  }
-
-  if (genesisHash !== DEVNET_GENESIS_HASH) {
-    throw new VerificationError('wrong_network', 'The selected RPC is not the configured Solana devnet.');
-  }
+  const genesisHash = await assertExpectedNetwork(rpcUrl);
 
   let response: TransactionResponse | null;
   try {
@@ -147,10 +166,13 @@ async function verifyWithRpc(
   }
 
   if (!response) {
-    throw new VerificationError('pending', 'The transaction is not available at finalized commitment yet.');
+    throw new VerificationError('record_not_found', 'No finalized transaction was found for this signature.');
   }
-  if (!response.meta || response.meta.err !== null) {
-    throw new VerificationError('invalid_record', 'The transaction did not complete successfully.');
+  if (!response.meta) {
+    throw new VerificationError('invalid_record', 'The transaction does not include execution metadata.');
+  }
+  if (response.meta.err !== null) {
+    throw new VerificationError('transaction_failed', 'The Solana transaction failed and cannot be a ProofStamp.');
   }
   if (response.transaction.signatures[0] !== signature) {
     throw new VerificationError('invalid_record', 'The returned transaction signature does not match the requested record.');
@@ -236,7 +258,8 @@ export async function fetchChainRecord(
       if (
         error.code === 'wrong_network' ||
         error.code === 'invalid_record' ||
-        error.code === 'unsupported_transaction'
+        error.code === 'unsupported_transaction' ||
+        error.code === 'transaction_failed'
       ) {
         throw error;
       }
@@ -244,5 +267,44 @@ export async function fetchChainRecord(
     }
   }
 
+  throw lastError ?? new VerificationError('rpc_unavailable', 'No RPC endpoint is configured.');
+}
+
+export async function fetchSignatureStatus(
+  signature: string,
+  customRpc?: string,
+): Promise<SignatureStatus | null> {
+  let lastError: VerificationError | null = null;
+  for (const rpcUrl of rpcCandidates(customRpc)) {
+    try {
+      await assertExpectedNetwork(rpcUrl);
+      const result = await rpcCall<SignatureStatusesResponse>(rpcUrl, 'getSignatureStatuses', [
+        [signature],
+        { searchTransactionHistory: true },
+      ]);
+      return result.value[0] ?? null;
+    } catch (error) {
+      if (error instanceof VerificationError && error.code === 'wrong_network') throw error;
+      lastError = error instanceof VerificationError
+        ? error
+        : new VerificationError('rpc_unavailable', 'Could not read transaction status.');
+    }
+  }
+  throw lastError ?? new VerificationError('rpc_unavailable', 'No RPC endpoint is configured.');
+}
+
+export async function fetchBlockHeight(customRpc?: string): Promise<number> {
+  let lastError: VerificationError | null = null;
+  for (const rpcUrl of rpcCandidates(customRpc)) {
+    try {
+      await assertExpectedNetwork(rpcUrl);
+      return await rpcCall<number>(rpcUrl, 'getBlockHeight', [{ commitment: 'confirmed' }]);
+    } catch (error) {
+      if (error instanceof VerificationError && error.code === 'wrong_network') throw error;
+      lastError = error instanceof VerificationError
+        ? error
+        : new VerificationError('rpc_unavailable', 'Could not read the current Solana block height.');
+    }
+  }
   throw lastError ?? new VerificationError('rpc_unavailable', 'No RPC endpoint is configured.');
 }

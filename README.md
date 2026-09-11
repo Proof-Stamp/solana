@@ -1,30 +1,35 @@
 # ProofStamp via Solana
 
-ProofStamp via Solana is a small Solana **devnet** prototype. A user selects a file, the browser calculates SHA-256 locally, and a Cloudflare Pages Function records only the digest in a Solana Memo transaction paid by an operator-controlled devnet fee payer.
+ProofStamp via Solana is a small Solana **devnet** prototype. A user selects a file, the browser calculates SHA-256 locally, and a restricted Cloudflare Pages Function records only that digest in a Solana Memo transaction paid by an operator-controlled devnet fee payer.
 
-There is no user wallet, seed phrase, token balance, faucet step, passkey, ZeroDev dependency, or application database in v1.
+There is no user wallet, seed phrase, token balance, faucet step, passkey, ZeroDev dependency, custom Solana program, or application database in v1.
 
 ## v1 flow
 
 ```text
 file on device
      |
-     | local SHA-256
+     | exact-byte SHA-256 in browser
      v
-proofstamp:v1:sha256:<digest>
+64 lowercase hex digest
      |
-     | POST digest + requestId only
+     | POST protocolVersion + requestId + digest only
      v
-Cloudflare Pages Function -> devnet fee payer -> Solana Memo
+Cloudflare Pages Function
      |
-     | independent browser read-back at finalized
+     | constructs + signs one fixed Memo transaction
+     v
+Solana devnet
+     |
+     | signature status + blockhash lifetime
+     | finalized independent browser read-back
      v
 human-readable receipt
      |
      +--> later: file + receipt -> public transaction -> match / mismatch
 ```
 
-The file never leaves the browser through application code. The public chain record contains the digest, timing, fee-payer activity, and normal Solana transaction metadata.
+The selected file never leaves the browser through application code. The public chain record contains the digest, transaction timing, fee-payer activity, and normal Solana transaction metadata.
 
 ## Protocol
 
@@ -45,15 +50,23 @@ The checker accepts legacy and v0 transactions and requests `maxSupportedTransac
 ## Architecture
 
 - React + TypeScript + Vite frontend hosted on Cloudflare Pages
-- Web Crypto SHA-256 in the browser
+- Web Crypto SHA-256 over the exact selected file bytes
 - independent browser JSON-RPC verification
-- Cloudflare Pages Function at `/api/stamps` for restricted transaction construction/signing
+- Cloudflare Pages Function at `/api/stamps` for restricted transaction construction and signing
 - shared server implementation in `worker/index.mjs`
 - `@solana/kit` and `@solana-program/memo` for the server transaction path
 - dedicated operator-controlled devnet fee payer
 - no D1 or other application database in v1
 
-The tradeoff is deliberate: v1 does not provide exactly-once submission or server-side recovery. If the HTTP response is lost after a transaction is submitted, the app does not automatically retry because that could create a duplicate ProofStamp.
+The submission endpoint accepts exactly `protocolVersion`, a UUID v4 `requestId`, and a lowercase SHA-256 digest. It rejects extra fields and does not accept filenames, file bytes, serialized transactions, arbitrary instructions, addresses, RPC URLs, programs, or fee settings.
+
+## Confirmation and failure model
+
+A submission response is not proof of success. After receiving the transaction signature, the browser checks `getSignatureStatuses`, follows the transaction's `lastValidBlockHeight`, and waits for finalization. Only then does it call `getTransaction` and validate the actual public Memo before showing **Public record verified**.
+
+Creation has distinct outcomes for a failed transaction, an expired blockhash, an unavailable RPC, and a transaction that is still confirming.
+
+v1 deliberately does not provide exactly-once submission or server-side recovery. If the HTTP response is lost or the server returns an ambiguous 5xx error, the browser does not automatically retry. A transaction may already have reached Solana, and blindly repeating it could create a second valid ProofStamp for the same digest.
 
 ## Local setup
 
@@ -61,7 +74,7 @@ Requirements: Node 24.15+ and npm 12.0.2+.
 
 ```bash
 npm install --global npm@12.0.2
-npm install
+npm ci --ignore-scripts
 cp .env.example .env.local
 npm run dev
 ```
@@ -83,12 +96,14 @@ Recommended Git deployment settings:
 ```text
 Repository: Proof-Stamp/solana
 Production branch: main
-Build command: npm install --global npm@12.0.2 && npm install --ignore-scripts && npm run build
+Build command: npm install --global npm@12.0.2 && npm ci --ignore-scripts && npm run build
 Build output directory: dist
 Root directory: /
 ```
 
-The repository pins Node 24.15.0 in `.nvmrc`, which is compatible with npm 12.0.2. `wrangler.jsonc` is configured for Pages with `pages_build_output_dir: "dist"`.
+The repository pins Node 24.15.0 in `.nvmrc` and commits `package-lock.json` for reproducible installs. `wrangler.jsonc` is configured for Pages with `pages_build_output_dir: "dist"`.
+
+Cloudflare Pages automatically provides `CF_PAGES_COMMIT_SHA` and `CF_PAGES_URL` during builds. Vite embeds those values as `proofstamp-build` and `proofstamp-deployment` meta tags in the generated HTML so a deployed build can be tied back to source.
 
 The repository contains `functions/api/stamps.mjs`, so Cloudflare Pages exposes the submission endpoint at `/api/stamps`. `public/_routes.json` limits Pages Functions routing to `/api/*`.
 
@@ -101,15 +116,13 @@ SOLANA_EXPECTED_GENESIS_HASH=EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG
 SUBMISSION_ENABLED=false
 ```
 
-Add this as a secret, not a public build variable:
+Add the fee payer only as a Cloudflare secret, never as a public `VITE_*` variable:
 
 ```text
-SOLANA_FEE_PAYER_SECRET=<64-byte Solana CLI keypair JSON array or base64>
+SOLANA_FEE_PAYER_SECRET=<32- or 64-byte Solana key material in a supported encoding>
 ```
 
-`ALLOWED_ORIGIN` is **not required on Cloudflare Pages** when the frontend and `/api/stamps` run on the same origin. The server accepts the request origin when it matches the Pages Function origin automatically. This also works for Cloudflare preview deployments and custom domains without changing configuration.
-
-For local development where the Vite frontend and Worker run on different ports, set:
+`ALLOWED_ORIGIN` is not required when the frontend and `/api/stamps` are served from the same Cloudflare Pages origin. For local development where the Vite frontend and Worker run on different ports, set:
 
 ```text
 ALLOWED_ORIGIN=http://localhost:5173
@@ -117,7 +130,7 @@ ALLOWED_ORIGIN=http://localhost:5173
 
 No D1 binding is required.
 
-Keep `SUBMISSION_ENABLED=false` for the first deployment. Enable creation only after the devnet network check succeeds and the dedicated signer is funded with a small amount of devnet SOL.
+The checked-in configuration keeps `SUBMISSION_ENABLED=false`. Enable creation in the deployed environment only after the devnet network check succeeds, the dedicated signer is funded with a small amount of devnet SOL, and an edge rate limit or equivalent abuse control protects `/api/stamps`.
 
 ## Preflight network check
 
@@ -127,7 +140,7 @@ Run:
 node scripts/check-devnet.mjs
 ```
 
-The script checks the RPC genesis hash and confirms that the canonical Memo account is executable. The pinned devnet genesis hash in this release is:
+The script checks the RPC genesis hash and confirms that the canonical Memo account is executable. The pinned devnet genesis hash is:
 
 ```text
 EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG
@@ -135,32 +148,28 @@ EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG
 
 ## Receipt and verification
 
-A receipt contains:
+A receipt contains the receipt version, network label, devnet genesis hash, transaction signature, actual top-level instruction index discovered during read-back, Memo program, SHA-256, slot, and blockchain-reported time when available.
 
-- receipt version
-- network label
-- devnet genesis hash
-- transaction signature
-- actual top-level instruction index discovered during read-back
-- Memo program
-- SHA-256
-- slot
-- blockchain-reported time when available
+The receipt is a locator plus convenience metadata. During later checking, the public transaction is authoritative. The checker uses the receipt's transaction signature and instruction index to locate the record, then validates the transaction and compares the selected file with the digest decoded from the Memo. Receipt hash, time, slot, network, genesis, or program fields cannot override that public record. If those fields were edited while the file still matches the chain, the UI reports the metadata difference separately.
 
-During later checking, the public transaction is authoritative. A matching file is compared with the digest decoded from the Memo. If receipt fields differ from the public transaction, the UI reports that separately rather than calling it tampering.
+The displayed blockchain time is Solana's reported/estimated block production time for the transaction. It is not the file's creation date, photo capture time, device time, or proof of an earlier date written inside the file.
 
-## Limits
+Existing receipts can be checked without the ProofStamp submission service. Verification still depends on a trusted Solana RPC that has access to the relevant transaction history. Genesis-hash checking prevents accidental use of another cluster but does not make an RPC cryptographically trustworthy.
+
+## Privacy and limits
 
 - file size: 25 MiB
-- devnet only
-- no identity/authorship claim
+- devnet only; devnet can reset
+- no permanent-record claim
+- no identity or authorship claim
 - no claim that stamped content is true
-- no permanent-record claim because Solana devnet can reset
 - no custom Solana program
 - no ZeroDev in v1
 - no application database in v1
 - no exactly-once submission guarantee
 - no file, filename, or arbitrary transaction payload accepted by the server path
+
+A public SHA-256 digest is not encryption. Someone who already has or can guess a candidate file can hash it and test whether it matches the public record.
 
 See [PRIVACY.md](PRIVACY.md) and [SECURITY.md](SECURITY.md).
 
@@ -171,4 +180,6 @@ npm run test
 npm run build
 ```
 
-Before release, complete live devnet smoke checks for original-vs-altered files, finalized read-back, receipt edits, wrong program/network/index, RPC failure, and sponsor-offline verification.
+The automated suite covers hash encoding and a known SHA-256 vector, canonical Memo grammar, Base58 handling, receipt parsing, RPC verification outcomes, signature status/block-height helpers, and submission endpoint guardrails. CI also type-checks/builds the frontend and checks/imports the Worker and Pages Function.
+
+Before a public release, also complete live devnet smoke checks for creation/finalization, original-vs-altered files, receipt metadata edits, wrong program/network/index, RPC failure, blockhash expiry behavior, and verification while sponsored creation is disabled.

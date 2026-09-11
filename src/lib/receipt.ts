@@ -1,9 +1,5 @@
-import {
-  DEVNET_GENESIS_HASH,
-  MEMO_PROGRAM_ID,
-  NETWORK_LABEL,
-  RECEIPT_VERSION,
-} from './config';
+import { RECEIPT_VERSION } from './config';
+import { decodeBase58 } from './base58';
 import { isSha256Hex } from './protocol';
 
 export interface ProofStampReceipt {
@@ -19,7 +15,6 @@ export interface ProofStampReceipt {
 }
 
 const HEADER = 'ProofStamp via Solana receipt';
-const BASE58_RE = /^[1-9A-HJ-NP-Za-km-z]+$/;
 
 export function formatReceipt(receipt: ProofStampReceipt): string {
   return [
@@ -37,6 +32,12 @@ export function formatReceipt(receipt: ProofStampReceipt): string {
     'The file stays on your device. This receipt points to a public Solana record.',
     'ProofStamp shows existence and integrity of exact bytes. It does not prove that the content is true.',
   ].join('\n');
+}
+
+function validateMetadata(value: string, field: string): void {
+  if (!value || value.length > 256 || /[\u0000-\u001f\u007f]/.test(value)) {
+    throw new Error(`Invalid ${field} in receipt.`);
+  }
 }
 
 export function parseReceipt(text: string): ProofStampReceipt {
@@ -80,17 +81,28 @@ export function parseReceipt(text: string): ProofStampReceipt {
   const blockTime = required('block_time');
 
   if (receiptVersion !== RECEIPT_VERSION) throw new Error('Unsupported receipt version.');
-  if (network !== NETWORK_LABEL) throw new Error('Unsupported receipt network.');
-  if (genesisHash !== DEVNET_GENESIS_HASH) throw new Error('Receipt is not for the configured Solana devnet.');
-  if (!BASE58_RE.test(transaction) || transaction.length < 64 || transaction.length > 100) {
+  validateMetadata(network, 'network');
+  validateMetadata(genesisHash, 'genesis hash');
+  validateMetadata(program, 'program');
+
+  let signatureBytes: Uint8Array;
+  try {
+    signatureBytes = decodeBase58(transaction);
+  } catch {
     throw new Error('Invalid Solana transaction signature.');
   }
+  if (signatureBytes.length !== 64) {
+    throw new Error('Invalid Solana transaction signature.');
+  }
+
   if (!Number.isInteger(instructionIndex) || instructionIndex < 0 || instructionIndex > 255) {
     throw new Error('Invalid instruction index.');
   }
-  if (program !== MEMO_PROGRAM_ID) throw new Error('Unsupported Memo program.');
   if (!isSha256Hex(sha256)) throw new Error('Invalid SHA-256 in receipt.');
   if (!Number.isSafeInteger(slot) || slot < 0) throw new Error('Invalid slot in receipt.');
+  if (blockTime !== 'unavailable' && Number.isNaN(Date.parse(blockTime))) {
+    throw new Error('Invalid block time in receipt.');
+  }
 
   return {
     receiptVersion,
