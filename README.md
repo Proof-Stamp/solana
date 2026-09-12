@@ -2,6 +2,8 @@
 
 ProofStamp via Solana is a small Solana **devnet** prototype. A user selects a file, the browser calculates SHA-256 locally, and a restricted Cloudflare Pages Function records only that digest in a Solana Memo transaction paid by an operator-controlled devnet fee payer.
 
+**Live devnet app:** https://solana.proofstamp.org
+
 There is no user wallet, seed phrase, token balance, faucet step, passkey, ZeroDev dependency, custom Solana program, or application database in v1.
 
 ## v1 flow
@@ -91,6 +93,8 @@ On Cloudflare Pages, leave `VITE_SUBMIT_API_BASE` empty so the frontend uses the
 
 ## Cloudflare Pages deployment
 
+Current public devnet deployment: https://solana.proofstamp.org
+
 Recommended Git deployment settings:
 
 ```text
@@ -107,16 +111,18 @@ Cloudflare Pages automatically provides `CF_PAGES_COMMIT_SHA` and `CF_PAGES_URL`
 
 The repository contains `functions/api/stamps.mjs`, so Cloudflare Pages exposes the submission endpoint at `/api/stamps`. `public/_routes.json` limits Pages Functions routing to `/api/*`.
 
-### Pages environment variables
+### Pages environment configuration
 
-```text
-VITE_SOLANA_RPC_URL=https://api.devnet.solana.com
-SOLANA_RPC_URL=https://api.devnet.solana.com
-SOLANA_EXPECTED_GENESIS_HASH=EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG
-SUBMISSION_ENABLED=false
-```
+The checked-in Wrangler configuration is explicit about creation state:
 
-Add the fee payer only as a Cloudflare secret, never as a public `VITE_*` variable:
+- local/default: `SUBMISSION_ENABLED=false`
+- preview: `SUBMISSION_ENABLED=false`
+- production: `SUBMISSION_ENABLED=true`
+- all environments pin the Solana devnet genesis hash
+
+RPC credentials and signer material are not committed. Production supplies `SOLANA_RPC_URL` and `SOLANA_FEE_PAYER_SECRET` as Cloudflare secrets. Preview does not receive the production fee-payer secret.
+
+The fee payer must remain a Cloudflare secret, never a public `VITE_*` variable:
 
 ```text
 SOLANA_FEE_PAYER_SECRET=<32- or 64-byte Solana key material in a supported encoding>
@@ -130,7 +136,7 @@ ALLOWED_ORIGIN=http://localhost:5173
 
 No D1 binding is required.
 
-The checked-in configuration keeps `SUBMISSION_ENABLED=false`. Enable creation in the deployed environment only after the devnet network check succeeds, the dedicated signer is funded with a small amount of devnet SOL, and an edge rate limit or equivalent abuse control protects `/api/stamps`.
+Sponsored creation should be enabled only when the devnet network check succeeds, the dedicated signer is funded with a small amount of devnet SOL, and an edge rate limit or equivalent abuse control protects `/api/stamps`.
 
 ## Preflight network check
 
@@ -182,4 +188,4 @@ npm run build
 
 The automated suite covers hash encoding and a known SHA-256 vector, canonical Memo grammar, Base58 handling, receipt parsing, RPC verification outcomes, signature status/block-height helpers, and submission endpoint guardrails. CI also type-checks/builds the frontend and checks/imports the Worker and Pages Function.
 
-Before a public release, also complete live devnet smoke checks for creation/finalization, original-vs-altered files, receipt metadata edits, wrong program/network/index, RPC failure, blockhash expiry behavior, and verification while sponsored creation is disabled.
+The production release smoke test has covered sponsored creation through finalized read-back, receipt generation, original-file verification, and an altered-file mismatch. Additional operational checks are tracked in [RELEASE.md](RELEASE.md).
