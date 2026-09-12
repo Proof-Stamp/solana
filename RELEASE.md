@@ -9,32 +9,32 @@ This checklist separates source readiness from deployment and GitHub administrat
 - [x] `package-lock.json` is committed and CI uses `npm ci --ignore-scripts`.
 - [x] The reachable `main` Git history has been checked for obvious fee-payer keys, private RPC credentials, and other secret-like material without printing candidate values.
 - [ ] The dedicated devnet fee payer is rotated if there is any uncertainty about prior exposure outside Git history, such as logs, screenshots, issues, or chat transcripts.
-- [x] `wrangler.jsonc` keeps `SUBMISSION_ENABLED=false` as the repository default.
+- [x] `wrangler.jsonc` keeps `SUBMISSION_ENABLED=false` as the local/default repository setting, disables preview creation, and explicitly enables production creation.
 
 ## 2. Cloudflare deployment controls
 
 Complete these before enabling sponsored creation for public traffic:
 
-- [ ] Production and preview environments use only Solana devnet.
-- [ ] Production `SOLANA_FEE_PAYER_SECRET` is a Cloudflare secret, not a build variable or repository value.
-- [ ] Preview deployments keep `SUBMISSION_ENABLED=false` and do not receive the production fee-payer secret unless there is a deliberate, separately reviewed reason.
+- [x] Production and preview are pinned to the Solana devnet genesis hash.
+- [x] Production `SOLANA_FEE_PAYER_SECRET` is a Cloudflare secret, not a build variable or repository value.
+- [x] Preview deployments keep `SUBMISSION_ENABLED=false` and do not receive the production fee-payer secret.
 - [ ] The fee payer holds only a small amount of devnet SOL.
-- [ ] `/api/stamps` has an edge rate limit or equivalent abuse control.
-- [ ] The operator can disable creation quickly with `SUBMISSION_ENABLED=false`.
-- [ ] The deployed HTML exposes `proofstamp-build` and `proofstamp-deployment` meta tags.
-- [ ] The `proofstamp-build` value matches the intended Git commit.
+- [x] `/api/stamps` has an edge rate limit or equivalent abuse control.
+- [x] The operator can disable creation with `SUBMISSION_ENABLED=false`.
+- [ ] Confirm the deployed HTML exposes `proofstamp-build` and `proofstamp-deployment` meta tags.
+- [ ] Confirm the `proofstamp-build` value matches the intended Git commit.
 
 ## 3. Live devnet smoke test
 
 Run against the exact deployment that will be linked from the public repository:
 
-- [ ] Select a small test file and confirm its SHA-256 is calculated locally.
-- [ ] Create one ProofStamp and record the transaction signature.
-- [ ] Confirm the UI does not report success before finalized read-back.
-- [ ] Open the Solana Explorer link and confirm the transaction is on devnet.
-- [ ] Download the receipt.
-- [ ] Check the original file with the receipt and get a match.
-- [ ] Change one byte of the file and confirm a mismatch.
+- [x] Select a small test file and confirm its SHA-256 is calculated locally.
+- [x] Create one ProofStamp through the production sponsor endpoint.
+- [x] Reach the finalized **Public record verified** state.
+- [ ] Open the Solana Explorer link and independently confirm the transaction is on devnet.
+- [x] Obtain the receipt and use it for later checking.
+- [x] Check the original file with the receipt and get a match.
+- [x] Change the file and confirm a mismatch against the same public record.
 - [ ] Edit receipt metadata while keeping the transaction locator intact and confirm the file is compared with the public record, not trusted receipt metadata.
 - [ ] Check a nonexistent transaction and confirm it is reported as not found, not indefinitely pending.
 - [ ] Test an unavailable/wrong-network RPC and confirm the result is distinct.
@@ -42,20 +42,20 @@ Run against the exact deployment that will be linked from the public repository:
 
 ## 4. Public repository administration
 
-- [ ] Set a concise repository description and the deployed application as the GitHub homepage.
+- [ ] Set a concise repository description and `https://solana.proofstamp.org` as the GitHub homepage.
 - [ ] Add relevant repository topics.
 - [ ] Protect `main` and require CI before merge.
 - [ ] Enable private vulnerability reporting if available.
-- [ ] Delete the obsolete `feat/v0.1-solana-devnet` branch after confirming it contains no unique work.
-- [ ] Keep the public-release PR and its CI evidence in repository history.
+- [ ] Delete obsolete release branches after confirming they contain no unique work needed on `main`.
+- [x] Keep the public-release PR and its CI evidence in repository history.
 
 ## 5. Visibility change
 
 Only after the previous sections are complete:
 
-- [ ] Merge the reviewed hardening PR.
-- [ ] Deploy the reviewed `main` commit.
-- [ ] Repeat the minimal creation + verification smoke test on production.
+- [x] Merge the reviewed hardening PR.
+- [x] Deploy the reviewed `main` code to production.
+- [x] Run the minimal creation + original/mismatch verification smoke test on production.
 - [ ] Change repository visibility to public.
 - [ ] Confirm README, Privacy, Security, How it works, and deployment links are accessible to a logged-out visitor.
 
