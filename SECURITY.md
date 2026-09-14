@@ -16,9 +16,9 @@ Please do not publish a suspected vulnerability, exposed credential, or exploit 
 
 The endpoint rejects extra fields. The server constructs the complete transaction itself. It does not accept serialized transactions, arbitrary instructions, addresses, RPC URLs, filenames, file bytes, fee settings, or user-selected programs.
 
-The only transaction created by this path is a Solana legacy transaction containing the canonical ProofStamp Memo payload. The operator-controlled devnet fee payer pays the normal network fee.
+The only transaction created by this path is a Solana legacy transaction containing the canonical ProofStamp Memo payload. The operator-controlled devnet fee payer pays the normal network fee. `SOLANA_FEE_PAYER_SECRET` is server-only; keep that account devnet-only and low-balance.
 
-The fee payer is stored only in the Cloudflare secret `SOLANA_FEE_PAYER_SECRET`. Keep that account low-balance and devnet-only. Creation can be disabled with `SUBMISSION_ENABLED=false` without affecting browser verification of existing receipts. The checked-in configuration keeps creation disabled by default.
+The checked-in configuration keeps sponsored creation disabled by default. Creation can be stopped with `SUBMISSION_ENABLED=false` without affecting browser verification of existing receipts.
 
 ## Submission ambiguity and expiry
 
@@ -28,15 +28,13 @@ If the browser receives a transaction signature, it follows that signature with 
 
 If the HTTP response is lost or the submission service returns a server error, the browser does **not** automatically repeat the submission. The transaction may already have reached Solana, and an automatic retry could create a second valid ProofStamp for the same digest.
 
-If no transaction status is found before the submitted blockhash expires, creation is reported as expired rather than as indefinitely pending.
+If no transaction status is found before the submitted blockhash expires, creation is reported as expired rather than indefinitely pending.
 
 ## Sponsor abuse controls
 
 CORS and Origin checks are browser controls, not abuse-prevention controls. A caller outside a browser can invoke a public endpoint directly.
 
-Before enabling sponsored creation for wider public use, configure a Cloudflare rate limit or equivalent edge control for `/api/stamps`. Keep the signer funded with only the small amount of devnet SOL required for testing. The low signer balance is the final hard bound on total sponsored spend for this prototype.
-
-Do not put a fee-payer secret, private RPC credential, or other secret in a `VITE_*` variable. Vite variables are public browser configuration.
+For wider public use, maintain a Cloudflare rate limit or equivalent edge control for `/api/stamps`, keep the dedicated devnet signer low-balance, and keep the submission kill switch available. Do not put a fee-payer secret, private RPC credential, or other secret in a `VITE_*` variable because Vite variables are public browser configuration.
 
 ## Network and RPC trust
 
@@ -64,6 +62,6 @@ The digest read from the public transaction is authoritative for the file-match 
 
 A SHA-256 digest is not encryption. The file is not published, but someone who already possesses or can guess a candidate file can hash that candidate and compare it with the public digest.
 
-## Before making the repository public
+## Operational hygiene
 
-Scan the full Git history for secrets, not only the current tree. Rotate the dedicated devnet fee payer if there is any uncertainty about whether its private key ever appeared in a commit, log, screenshot, issue, or chat transcript. Keep production and preview Cloudflare secrets separate from repository configuration.
+Keep production and preview environments separated, keep deployment credentials out of browser configuration and repository history, and rotate any credential that may have been exposed. Source configuration alone does not prove that external account controls are active; use [RELEASE.md](RELEASE.md) for the current operational checks that require direct environment inspection.

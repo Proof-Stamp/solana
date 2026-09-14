@@ -13,16 +13,16 @@
 
 > **Devnet prototype.** Solana devnet can reset and RPC providers may stop serving old history. Do not treat this as permanent or legal evidence.
 
-A file is hashed in the browser with SHA-256. A small sponsor service records only that digest in a canonical Solana Memo transaction. Later, the same file and receipt can be checked against the public transaction.
+A selected file is hashed in the browser with SHA-256. A small sponsor service records only that digest in a canonical Solana Memo transaction. The browser waits for finalization, reads the transaction back, and only then creates a receipt. Later, the original file and receipt can be checked against the public transaction.
 
 - **Stays on your device:** the selected file and its filename. Application code does not submit either one.
 - **Becomes public:** the SHA-256 digest plus normal Solana transaction metadata, including timing and fee-payer activity.
 - **A match establishes:** the exact file bytes match the digest in the selected public Solana transaction.
-- **A match does not establish:** authorship, truth, photo capture time, delivery, acceptance, or the truth of a date written inside the file.
+- **A match does not establish:** authorship, truth, capture time, delivery, acceptance, or the truth of a date written inside the file.
 
-A simple example: save a shared report, create a ProofStamp, and keep the original file with its receipt. If a question comes up later, check that exact file against the public record. An edited copy produces a different digest.
+Keep the original file and receipt. ProofStamp cannot recover a lost original.
 
-<a id="v1-flow"></a>
+<a id="how-it-works"></a>
 ## How it works
 
 ```mermaid
@@ -39,27 +39,15 @@ flowchart LR
 
 The sponsor endpoint accepts exactly `protocolVersion`, a UUID v4 `requestId`, and a lowercase SHA-256 digest. The server constructs and signs the transaction. It does not accept file bytes, filenames, arbitrary instructions, programs, addresses, serialized transactions, RPC URLs, or fee settings.
 
-Creation is not considered successful when the POST returns. The browser waits for Solana finalization, reads the transaction back independently, validates the public Memo, and confirms that the on-chain digest is the digest it intended to record.
-
-If a transaction signature is already known but confirmation or RPC read-back fails, the UI keeps that signature and lets the user check the same transaction again. That recovery path does **not** send another stamp request. A lost submission response remains an ambiguous outcome and is not blindly retried.
-
-## Protocol
-
 The on-chain Memo payload is exactly:
 
 ```text
 proofstamp:v1:sha256:<64 lowercase hexadecimal characters>
 ```
 
-Canonical Memo program:
+Creation is not considered successful when the POST returns. The browser waits for Solana finalization, reads the transaction back independently, and confirms that the public Memo contains the expected digest. If a transaction signature is already known and confirmation or read-back fails, recovery checks that same transaction rather than blindly submitting another stamp.
 
-```text
-MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr
-```
-
-The checker accepts legacy and v0 transactions and requests `maxSupportedTransactionVersion: 0` from RPC. The receipt is a locator plus convenience metadata. During checking, the public transaction is authoritative. Edited receipt metadata cannot replace the digest, slot, program, or block time read from the chain.
-
-Solana's reported block time is the network's reported/estimated production time for the transaction. It is not the file's creation date, photo capture time, device time, or proof of an earlier date written inside the file.
+Verification requests `maxSupportedTransactionVersion: 0`, accepts supported legacy/v0 transactions, checks the configured devnet genesis hash, validates the canonical Memo program, and treats the public transaction as authoritative. Receipt metadata cannot override the digest, slot, program, or block time read from the chain.
 
 ## Architecture
 
@@ -69,17 +57,15 @@ Solana's reported block time is the network's reported/estimated production time
 - `@solana/kit` + `@solana-program/memo` for server-side transaction construction
 - dedicated operator-controlled **devnet** fee payer
 - browser JSON-RPC verification and finalized transaction read-back
-- no user wallet, seed phrase, token balance, passkey, ZeroDev dependency, custom Solana program, or application database in v1
+- no user wallet, seed phrase, passkey, ZeroDev dependency, custom Solana program, or application database in v1
 
-The app does have a backend API for sponsored creation, and infrastructure providers may produce operational logs. See [PRIVACY.md](PRIVACY.md).
+The current file limit is 25 MiB.
 
-## Run it locally
+## Run locally
 
 Requirements: Node **24.15+** and npm **12.0.2+**. The repository pins Node in `.nvmrc`, pins npm in `package.json`, and commits `package-lock.json`.
 
-### Frontend-only development
-
-Use this when working on browser UI or verification. Verification talks directly to the configured public devnet RPC. Sponsored creation will not work unless you also run the local Pages service and point the frontend at it.
+For frontend work and verification:
 
 ```bash
 npm install --global npm@12.0.2
@@ -88,49 +74,25 @@ cp .env.example .env.local
 npm run dev
 ```
 
-Vite serves the frontend at `http://localhost:5173`.
+Vite normally serves `http://localhost:5173`. Sponsored creation requires the local Pages service and a dedicated devnet signer.
 
-Every `VITE_*` variable is public because Vite bundles it into browser code:
-
-```text
-VITE_SOLANA_RPC_URL=https://api.devnet.solana.com
-VITE_SOLANA_RPC_FALLBACK_URL=
-VITE_SUBMIT_API_BASE=
-```
-
-### Full local creation + verification
-
-The simplest full-path setup uses the existing Cloudflare Pages development route so the frontend and `/api/stamps` share one origin.
+For the full local path:
 
 ```bash
 npm install --global npm@12.0.2
 npm ci --ignore-scripts
 cp .env.example .env.local
 cp .dev.vars.example .dev.vars
-# Edit .dev.vars and supply a dedicated devnet signer. Never commit it.
+# Add a dedicated devnet signer to .dev.vars. Never commit it.
 npm run build
 npm run pages:dev
 ```
 
-Wrangler normally serves the built app on `http://localhost:8788`. Open the URL Wrangler prints if it chooses another port.
-
-`.dev.vars` contains server-only values. They are not browser configuration and must never use the `VITE_` prefix:
-
-```text
-SOLANA_RPC_URL=https://api.devnet.solana.com
-SOLANA_EXPECTED_GENESIS_HASH=EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG
-SOLANA_FEE_PAYER_SECRET=<dedicated devnet key material>
-SUBMISSION_ENABLED=true
-ALLOWED_ORIGIN=
-```
-
-Use a dedicated devnet signer with only a small devnet balance. Supported secret encodings are documented by the example file and server code. `.dev.vars`, `.env`, `.env.local`, build output, Wrangler state, and logs are ignored by Git.
-
-For split development, run the Pages service and Vite separately, set `VITE_SUBMIT_API_BASE` to the local Pages origin, and set `ALLOWED_ORIGIN=http://localhost:5173` in `.dev.vars`.
+Wrangler normally serves the built app at `http://localhost:8788`; use the URL it prints if different. `VITE_*` variables are public browser configuration. Server secrets belong in `.dev.vars` locally and Cloudflare secrets in deployment environments.
 
 ## Checks
 
-Run the same checks expected by CI:
+Run these local checks before review:
 
 ```bash
 npm run lint
@@ -144,46 +106,25 @@ node -e "import('./worker/index.mjs').then(() => console.log('worker imports ok'
 node -e "import('./functions/api/stamps.mjs').then(() => console.log('Pages function imports ok'))"
 ```
 
-`npm run typecheck` is the explicit TypeScript gate. `npm run build` repeats TypeScript checking before the Vite production build. Formatting enforcement is intentionally bounded to the tooling/configuration baseline rather than mass-reformatting the existing application during this release work.
+`npm run typecheck` is the fast local TypeScript check. `npm run build` also typechecks before producing the Vite bundle. The formatting check is intentionally limited to tooling and CI configuration; it is not a repository-wide formatter.
 
-The automated suite covers protocol grammar, hashing, receipts, submission guardrails, RPC outcomes, confirmation behavior, UI-state recovery helpers, and focused interaction-path regression checks. Real browser interaction checks remain a separate release gate.
+Automated tests cover hashing, protocol grammar, receipts, submission guardrails, RPC validation, confirmation behavior, recovery state, and interaction regressions. Browser/manual checks are separate release evidence.
 
-## Verification assumptions and limits
+## Security, privacy, and limitations
 
-Keep the original file and its receipt. ProofStamp cannot recover a lost original.
+Verification still depends on an RPC returning accurate Solana history. Checking the devnet genesis hash prevents accidental use of another cluster but does not make an RPC cryptographically trustworthy. A public SHA-256 digest is not encryption: someone who already has or can guess a candidate file can hash it and test for a match.
 
-Verification still depends on an RPC returning accurate Solana history. The checker validates the devnet genesis hash to prevent accidental use of another cluster, but that does not make an RPC cryptographically trustworthy. A public SHA-256 digest is not encryption: someone who already has or can guess a candidate file can hash it and test for a match.
+The app uses a server-side submission endpoint, and infrastructure providers may retain operational logs. Do not describe this version as having “no API”, “no backend”, or “no stored data”.
 
-The current file limit is 25 MiB. Devnet can reset. Historical RPC access may disappear. This prototype makes no permanence, identity, authorship, truth, delivery, acceptance, or legal-effect claim.
+Before enabling or operating sponsored creation, keep the fee payer devnet-only and low-balance, keep signer/RPC credentials out of browser configuration, maintain an abuse-control layer for `/api/stamps`, and keep the `SUBMISSION_ENABLED` kill switch available.
 
-## Deployment notes
+See:
 
-Cloudflare Pages production deployment: https://solana.proofstamp.org
-
-Recommended Git deployment settings:
-
-```text
-Repository: Proof-Stamp/solana
-Production branch: main
-Build command: npm install --global npm@12.0.2 && npm ci --ignore-scripts && npm run build
-Build output directory: dist
-Root directory: /
-```
-
-`wrangler.jsonc` defaults sponsored creation to disabled, disables it in previews, and explicitly enables it for production. Production RPC credentials and signer material belong in Cloudflare secrets. Preview must not receive the production fee-payer secret.
-
-Cloudflare provides `CF_PAGES_COMMIT_SHA` and `CF_PAGES_URL` during builds. Vite embeds them as `proofstamp-build` and `proofstamp-deployment` meta tags so an operator can compare a deployment with the reviewed Git commit.
-
-Before public traffic, independently verify rate limiting or equivalent abuse control for `/api/stamps`, keep the signer balance small, and confirm the `SUBMISSION_ENABLED` kill switch. CORS is not an abuse control.
-
-Run the network preflight when changing RPC configuration:
-
-```bash
-node scripts/check-devnet.mjs
-```
-
-## Project documents
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for setup and pull-request expectations, [SECURITY.md](SECURITY.md) for security reporting and trust boundaries, [PRIVACY.md](PRIVACY.md) for the data boundary and operational logging considerations, [DISCLAIMER.md](DISCLAIMER.md) for prototype and proof limitations, [TRADEMARKS.md](TRADEMARKS.md) for ProofStamp name and branding terms, and [RELEASE.md](RELEASE.md) for release evidence and owner-only actions.
+- [CONTRIBUTING.md](CONTRIBUTING.md) for development and pull-request expectations
+- [SECURITY.md](SECURITY.md) for reporting, trust boundaries, and safeguards
+- [PRIVACY.md](PRIVACY.md) for data handling and provider logging
+- [DISCLAIMER.md](DISCLAIMER.md) for prototype and proof limitations
+- [TRADEMARKS.md](TRADEMARKS.md) for ProofStamp name and branding terms
+- [RELEASE.md](RELEASE.md) for current operational release checks and historical evidence links
 
 MIT licensed. See [LICENSE](LICENSE).
