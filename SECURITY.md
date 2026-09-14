@@ -16,7 +16,7 @@ Please do not publish a suspected vulnerability, exposed credential, or exploit 
 
 The endpoint rejects extra fields. The server constructs the complete transaction itself. It does not accept serialized transactions, arbitrary instructions, addresses, RPC URLs, filenames, file bytes, fee settings, or user-selected programs.
 
-The only transaction created by this path is a Solana legacy transaction containing the canonical ProofStamp Memo payload. The operator-controlled devnet fee payer pays the normal network fee.
+The only transaction created by this path is a Solana legacy transaction containing the canonical ProofStamp Memo payload. The operator-controlled devnet fee payer pays the normal network fee. `SOLANA_FEE_PAYER_SECRET` is server-only; keep that account devnet-only and low-balance.
 
 The checked-in configuration keeps sponsored creation disabled by default. Creation can be stopped with `SUBMISSION_ENABLED=false` without affecting browser verification of existing receipts.
 
