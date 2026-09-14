@@ -39,7 +39,7 @@ export default [
       globals: readonlyGlobals,
     },
     rules: {
-      'no-dupe-case': 'error',
+      'no-duplicate-case': 'error',
       'no-dupe-keys': 'error',
       'no-redeclare': 'error',
       'no-undef': 'error',
