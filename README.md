@@ -4,6 +4,9 @@
 
 # ProofStamp via Solana
 
+[![CI](https://github.com/Proof-Stamp/solana/actions/workflows/ci.yml/badge.svg)](https://github.com/Proof-Stamp/solana/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 **Create and check a file proof on Solana devnet without uploading the file or connecting a wallet.**
 
 **Live devnet demo:** https://solana.proofstamp.org
@@ -127,9 +130,12 @@ For split development, run the Pages service and Vite separately, set `VITE_SUBM
 
 ## Checks
 
-Run the same core checks expected by CI:
+Run the same checks expected by CI:
 
 ```bash
+npm run lint
+npm run format:check
+npm run typecheck
 npm test
 npm run build
 node --check worker/index.mjs
@@ -138,9 +144,9 @@ node -e "import('./worker/index.mjs').then(() => console.log('worker imports ok'
 node -e "import('./functions/api/stamps.mjs').then(() => console.log('Pages function imports ok'))"
 ```
 
-`npm run build` includes TypeScript checking. This project does not currently claim separate lint or formatting checks.
+`npm run typecheck` is the explicit TypeScript gate. `npm run build` repeats TypeScript checking before the Vite production build. Formatting enforcement is intentionally bounded to the tooling/configuration baseline rather than mass-reformatting the existing application during this release work.
 
-The automated suite covers protocol grammar, hashing, receipts, submission guardrails, RPC outcomes, confirmation behavior, and UI-state recovery helpers. Browser interaction checks remain separate from those unit tests.
+The automated suite covers protocol grammar, hashing, receipts, submission guardrails, RPC outcomes, confirmation behavior, UI-state recovery helpers, and focused interaction-path regression checks. Real browser interaction checks remain a separate release gate.
 
 ## Verification assumptions and limits
 
@@ -176,8 +182,8 @@ Run the network preflight when changing RPC configuration:
 node scripts/check-devnet.mjs
 ```
 
-## Contributing and security
+## Project documents
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for setup and pull-request expectations, [SECURITY.md](SECURITY.md) for security reporting and trust boundaries, and [RELEASE.md](RELEASE.md) for release evidence and owner-only actions.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup and pull-request expectations, [SECURITY.md](SECURITY.md) for security reporting and trust boundaries, [PRIVACY.md](PRIVACY.md) for the data boundary and operational logging considerations, [DISCLAIMER.md](DISCLAIMER.md) for prototype and proof limitations, [TRADEMARKS.md](TRADEMARKS.md) for ProofStamp name and branding terms, and [RELEASE.md](RELEASE.md) for release evidence and owner-only actions.
 
 MIT licensed. See [LICENSE](LICENSE).
