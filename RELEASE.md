@@ -13,7 +13,7 @@ This file records what was inspected for the public-release candidate and what s
 
 The complete PR file list was reviewed before release approval. The candidate changes application UI/recovery logic, tests, documentation, and CI/tooling. It does **not** change `worker/index.mjs`, `functions/api/stamps.mjs`, `wrangler.jsonc`, or `package-lock.json`, so the sponsor endpoint implementation, Pages wrapper, deployment environment configuration, and application dependency lock are outside this PR's behavioral diff.
 
-The latest code-bearing head reviewed before this checklist correction was `df08be2db7df978fe7bb3b788dcd2a149f164c61`. GitHub Actions run `34861127497` completed successfully. The workflow is named `CI`; the actual status-check job to require in branch protection is **`test`**.
+GitHub Actions on the release branch has completed successfully with install, lint, format check, typecheck, tests, production build, Worker/Pages syntax checks, and module import checks. The workflow is named `CI`; the actual status-check job to require in branch protection is **`test`**.
 
 CI currently runs:
 
@@ -35,17 +35,20 @@ The ESLint/Prettier baseline is intentionally bounded. Their exact versions are 
 | Check | Evidence | Result | Limitation |
 | --- | --- | --- | --- |
 | Source diff review | All 20 changed paths reviewed against refreshed `main` | Completed | Source review is not browser execution. |
-| CI on `df08be2…` | GitHub Actions run `34861127497`, job `test` | Passed | Any later commit still requires its own green CI. |
+| Final-tree CI before scan evidence update | GitHub Actions run `34863229403`, job `test`, head `6600c4cf…` | Passed | This documentation-only update still requires its own final CI. |
 | Receipt-loading race guard | `AsyncOperationGate` + guarded `file.text()` path + focused regression coverage | Passed in CI | Full browser interaction remains a manual release check. |
 | Verification stale-result guard | Generation-token logic + focused regression coverage | Passed in CI | Full browser interaction remains a manual release check. |
 | Known-signature recovery | Recovery classification + source-wiring regression coverage | Passed in CI | Manual network inspection is still required to confirm zero second `/api/stamps` POSTs in the browser. |
-| Cloudflare PR preview | Cloudflare PR bot reported a successful preview deployment for `df08be2…` | Available | Deployment success alone does not establish browser behavior or production secret configuration. |
-| Full create / receipt / match / mismatch flow on this candidate | Not yet executed on the approved deployment | Unverified | Required before public visibility. |
-| Fresh all-ref/all-history secret scan | Not rerun for this candidate | Unverified | Required before public visibility. |
+| Cloudflare PR preview | Cloudflare PR bot reported successful preview deployment during candidate review | Available | Deployment success alone does not establish production secret configuration. |
+| Owner preview review | Owner manually reviewed the candidate preview and reported it good | Passed at owner-review level | Individual edge-case scenarios were not separately itemized as evidence. |
+| Fresh all-ref/all-history secret scan | Temporary read-only workflow run `34863136849` | Passed | High-signal scanner, not a commercial/entropy-based secret-scanning product. |
+| Full create / receipt / match / mismatch flow on approved production merge | Not yet executed | Unverified | Required before public visibility. |
 | Cloudflare edge rate limit and secret separation | Requires account/operator inspection | Unverified | CORS is not an abuse control. |
 | Fee-payer balance | Requires operator/Solana account inspection | Unverified | Confirm the dedicated signer holds only a small devnet balance. |
 
-No inline PR review threads are currently open. The PR remains draft and unmerged.
+The fresh scanner fetched repository branches, tags, and GitHub pull-request head refs, scanned commit messages and text blobs without printing candidate values, and reported: **no obvious secret literals across 149 unique reachable commits from 31 fetched refs**. It checked project-sensitive secret assignments, raw Solana/key byte arrays, long Base58 secret-like literals, private-key PEM markers, credential-bearing URLs, GitHub/AWS token patterns, bearer credentials, JWT-like values, and sensitive-looking committed filenames. The temporary workflow was then removed. The add/remove pair left no net file difference from the previously reviewed `4dd47ae…` candidate tree.
+
+No inline PR review threads were open when last inspected. The PR remains draft and unmerged.
 
 ## Correctness changes in this candidate
 
@@ -65,9 +68,9 @@ Use the PR preview for layout, verification-only, accessibility, and stale-input
 
 After the reviewed PR is approved and merged **while the repository is still private**, deploy the approved merge commit to production and run the creation smoke test there before changing repository visibility.
 
-Record commit SHA, deployment URL, time, and result for these scenarios:
+Record commit SHA, deployment URL, time, and result for these scenarios where they have not already been explicitly evidenced:
 
-1. Confirm desktop and narrow-mobile rendering, keyboard operation, focus visibility, reduced-motion behavior, README/Mermaid rendering, and the visible proof limitations. Capture real screenshots from the candidate.
+1. Confirm desktop and narrow-mobile rendering, keyboard operation, focus visibility, reduced-motion behavior, README/Mermaid rendering, and the visible proof limitations. Capture real screenshots from the candidate if they will be used in the public README/release package.
 2. Verify an existing receipt and original file, then an altered copy. Confirm match and mismatch use the public transaction.
 3. Edit receipt convenience metadata while preserving the transaction signature and instruction index. Confirm chain data remains authoritative and metadata differences are reported separately.
 4. Start verification and change each relevant input before the older request completes. Confirm an old result never reappears for the new inputs.
@@ -80,13 +83,13 @@ Do not fabricate successful states or use screenshots from an older build as evi
 
 ## Secrets and private operational material
 
-Publication requires separate checks of the current tree and reachable Git history.
+Publication requires separate checks of the current tree, reachable Git history, and non-Git operational surfaces.
 
-- Current release changes were inspected for environment files, signer material, RPC credentials, private operational notes, and generated files. Example configuration contains placeholders and public devnet identifiers only.
-- No repository tags were present when refs were previously checked.
-- PR #5 records a successful temporary full-history scan against then-reachable `main`. That is useful historical evidence, not a fresh scan for this candidate.
-- Before visibility changes, rerun an approved secret/history scanner against **all refs and reachable history**. Do not paste candidate secrets into the PR. If anything real is found, rotate it before publication; deleting it only from the latest tree is insufficient.
-- Also inspect Cloudflare build/deploy logs, GitHub issue/PR attachments, screenshots, and copied diagnostics for signer or private RPC material.
+- A fresh Git-history scan passed in workflow run `34863136849`: no obvious secret literals across 149 unique reachable commits from 31 fetched refs.
+- The scanner included branches, tags, pull-request heads, commit messages, and reachable text blobs, and intentionally did not print candidate secret values.
+- The temporary scanner was removed after the successful run. Comparing the candidate before the temporary scanner (`4dd47ae…`) with the post-removal head (`6600c4cf…`) showed **no net changed files**.
+- This Git scan does not inspect Cloudflare account data, private logs outside Git, deleted/unreachable Git objects, or arbitrary external attachments. Before visibility changes, also inspect Cloudflare build/deploy logs, GitHub issue/PR attachments, screenshots, and copied diagnostics for signer or private RPC material.
+- If any real credential exposure is discovered outside Git, rotate it before publication even though the Git-history scan passed.
 
 ## Dependency PR disposition
 
@@ -160,23 +163,21 @@ Confirm in the actual account rather than relying on source configuration alone:
 **Blocked pending final release evidence.** Public visibility still requires:
 
 1. green CI on the exact final PR head;
-2. candidate browser/UI evidence and real screenshots;
-3. a fresh all-ref/all-history secret scan;
-4. direct Cloudflare/operator confirmation of rate limiting, secret separation, kill switch, fee-payer balance, and deployed commit metadata;
-5. successful production create → finalized read-back → original match → altered mismatch on the approved merge commit while the repository is still private.
+2. any browser scenarios not explicitly evidenced during owner preview review, especially recovery/network-request checks;
+3. direct Cloudflare/operator confirmation of rate limiting, secret separation, kill switch, fee-payer balance, and deployed commit metadata;
+4. successful production create → finalized read-back → original match → altered mismatch on the approved merge commit while the repository is still private.
 
-No mainnet migration or architecture expansion is required to clear these gates.
+The fresh all-ref/all-history Git secret scan is complete and passing. No mainnet migration or architecture expansion is required to clear the remaining gates.
 
 ## Final owner sequence
 
-1. Complete this source review and confirm final CI on the draft PR head.
-2. Run preview-safe browser/UI checks and capture candidate screenshots.
-3. Run the fresh all-ref/all-history secret scan and resolve any real finding.
-4. Approve and merge the reviewed PR **while the repository remains private**.
-5. Deploy the approved merge commit to production.
-6. Confirm the deployed SHA, Cloudflare controls, signer separation/balance, kill switch, and the minimal production create → finalized read-back → original match → altered mismatch flow.
-7. Apply repository metadata and any GitHub settings that are available while private.
-8. Change repository visibility to public.
-9. Immediately apply the `main` ruleset requiring **`test`**, enable private vulnerability reporting, and enable applicable public-repository security features.
-10. While logged out, verify README/Mermaid/brand rendering, badges, LICENSE, CONTRIBUTING, SECURITY, PRIVACY, DISCLAIMER, TRADEMARKS, Source, and live-app links.
-11. After the public release is stable, remove obsolete merged branches and finish the dependency-PR dispositions.
+1. Confirm final CI on the draft PR head and complete any browser scenarios not already explicitly evidenced.
+2. Review non-Git operational surfaces for credential exposure (Cloudflare logs, attachments, screenshots, copied diagnostics).
+3. Approve and merge the reviewed PR **while the repository remains private**.
+4. Deploy the approved merge commit to production.
+5. Confirm the deployed SHA, Cloudflare controls, signer separation/balance, kill switch, and the minimal production create → finalized read-back → original match → altered mismatch flow.
+6. Apply repository metadata and any GitHub settings that are available while private.
+7. Change repository visibility to public.
+8. Immediately apply the `main` ruleset requiring **`test`**, enable private vulnerability reporting, and enable applicable public-repository security features.
+9. While logged out, verify README/Mermaid/brand rendering, badges, LICENSE, CONTRIBUTING, SECURITY, PRIVACY, DISCLAIMER, TRADEMARKS, Source, and live-app links.
+10. After the public release is stable, remove obsolete merged branches and finish the dependency-PR dispositions.
