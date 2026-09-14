@@ -115,11 +115,14 @@ async function flush() {
   });
 }
 
-async function waitFor<T>(read: () => T | null | undefined, attempts = 40): Promise<T> {
-  for (let index = 0; index < attempts; index += 1) {
+async function waitFor<T>(read: () => T | null | undefined, timeoutMs = 1000): Promise<T> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
     const value = read();
     if (value) return value;
-    await flush();
+    await act(async () => {
+      await new Promise<void>((resolve) => setTimeout(resolve, 5));
+    });
   }
   throw new Error('Timed out waiting for UI state.');
 }
