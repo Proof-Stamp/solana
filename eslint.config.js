@@ -13,7 +13,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ['tests/**/*.{ts,tsx}'],
+    files: ['tests/**/*.{ts,tsx,mjs}'],
     languageOptions: {
       globals: {
         ...globals.browser,
@@ -22,9 +22,12 @@ export default tseslint.config(
     },
   },
   {
-    files: ['vite.config.ts'],
+    files: ['vite.config.ts', 'scripts/**/*.mjs'],
     languageOptions: {
-      globals: globals.node,
+      globals: {
+        ...globals.browser,
+        ...globals.node,
+      },
     },
   },
   {
@@ -34,6 +37,20 @@ export default tseslint.config(
         ...globals.browser,
         ...globals.node,
       },
+    },
+  },
+  {
+    files: ['src/lib/receipt.ts'],
+    rules: {
+      // Receipt filename sanitization intentionally matches C0 control characters.
+      'no-control-regex': 'off',
+    },
+  },
+  {
+    files: ['worker/index.mjs'],
+    rules: {
+      // This parser deliberately replaces low-level decoding errors with one stable public-facing error.
+      'preserve-caught-error': 'off',
     },
   },
 );
