@@ -62,19 +62,19 @@ describe('receipt-loading interaction path', () => {
   it('does not let a delayed receipt read overwrite pasted text', async () => {
     const gate = new AsyncOperationGate();
     const receiptRead = deferred<string>();
-    let selectedInput = '';
+    const selectedInput = { value: '' };
 
     const token = gate.begin();
     const pendingRead = commitIfCurrent(gate, token, receiptRead.promise, (value) => {
-      selectedInput = value;
+      selectedInput.value = value;
     });
 
-    selectedInput = 'pasted receipt';
+    selectedInput.value = 'pasted receipt';
     gate.invalidate();
     receiptRead.resolve('late file receipt');
     await pendingRead;
 
-    expect(selectedInput).toBe('pasted receipt');
+    expect(selectedInput.value).toBe('pasted receipt');
   });
 
   it('wires receipt selection, paste replacement, view exit, and read errors to the guard', () => {
