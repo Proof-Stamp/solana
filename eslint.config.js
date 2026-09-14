@@ -1,56 +1,51 @@
-import js from '@eslint/js';
-import globals from 'globals';
-import tseslint from 'typescript-eslint';
-
-export default tseslint.config(
-  { ignores: ['dist', 'coverage', 'node_modules'] },
-  js.configs.recommended,
-  ...tseslint.configs.recommended,
-  {
-    files: ['src/**/*.{ts,tsx}'],
-    languageOptions: {
-      globals: globals.browser,
-    },
-  },
-  {
-    files: ['tests/**/*.{ts,tsx,mjs}'],
-    languageOptions: {
-      globals: {
-        ...globals.browser,
-        ...globals.node,
-      },
-    },
-  },
-  {
-    files: ['vite.config.ts', 'scripts/**/*.mjs'],
-    languageOptions: {
-      globals: {
-        ...globals.browser,
-        ...globals.node,
-      },
-    },
-  },
-  {
-    files: ['worker/**/*.mjs', 'functions/**/*.mjs'],
-    languageOptions: {
-      globals: {
-        ...globals.browser,
-        ...globals.node,
-      },
-    },
-  },
-  {
-    files: ['src/lib/receipt.ts'],
-    rules: {
-      // Receipt filename sanitization intentionally matches C0 control characters.
-      'no-control-regex': 'off',
-    },
-  },
-  {
-    files: ['worker/index.mjs'],
-    rules: {
-      // This parser deliberately replaces low-level decoding errors with one stable public-facing error.
-      'preserve-caught-error': 'off',
-    },
-  },
+const readonlyGlobals = Object.fromEntries(
+  [
+    'AbortController',
+    'AbortSignal',
+    'Blob',
+    'Buffer',
+    'File',
+    'FormData',
+    'Headers',
+    'Request',
+    'Response',
+    'TextDecoder',
+    'TextEncoder',
+    'URL',
+    'URLSearchParams',
+    'atob',
+    'btoa',
+    'clearInterval',
+    'clearTimeout',
+    'console',
+    'crypto',
+    'fetch',
+    'process',
+    'setInterval',
+    'setTimeout',
+    'structuredClone',
+  ].map((name) => [name, 'readonly']),
 );
+
+export default [
+  {
+    ignores: ['dist/**', 'coverage/**', 'node_modules/**', 'src/**', 'tests/**/*.ts', 'vite.config.ts'],
+  },
+  {
+    files: ['eslint.config.js', 'scripts/**/*.mjs', 'worker/**/*.mjs', 'functions/**/*.mjs', 'tests/**/*.mjs'],
+    languageOptions: {
+      ecmaVersion: 'latest',
+      sourceType: 'module',
+      globals: readonlyGlobals,
+    },
+    rules: {
+      'no-dupe-case': 'error',
+      'no-dupe-keys': 'error',
+      'no-redeclare': 'error',
+      'no-undef': 'error',
+      'no-unreachable': 'error',
+      'no-unused-vars': ['error', { argsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' }],
+      'no-useless-catch': 'error',
+    },
+  },
+];
