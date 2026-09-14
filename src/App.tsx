@@ -1,15 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import {
-  SubmissionOutcomeUnknownError,
-  submitStamp,
-  type StampSubmission,
-} from './lib/api';
+import { submitStamp, type StampSubmission } from './lib/api';
 import { waitForFinalizedProofStamp } from './lib/confirmation';
 import {
   APP_VERSION,
-  DEVNET_GENESIS_HASH,
   MAX_FILE_BYTES,
-  MEMO_PROGRAM_ID,
   NETWORK_LABEL,
   RECEIPT_VERSION,
   explorerUrl,
@@ -23,10 +17,16 @@ import {
   VerificationError,
   type ChainRecord,
 } from './lib/rpc';
+import {
+  AsyncOperationGate,
+  classifyCreationRecovery,
+  type CreationRecovery,
+} from './lib/ui-state';
 
 type View = 'stamp' | 'check';
 type CreateState = 'idle' | 'hashing' | 'submitting' | 'waiting' | 'ready' | 'error';
 type CheckState = 'idle' | 'checking' | 'match' | 'mismatch' | 'metadata-diff' | 'error';
+type CopyState = 'idle' | 'copied' | 'error';
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -52,6 +52,9 @@ function downloadText(filename: string, text: string): void {
 }
 
 async function copyText(text: string): Promise<void> {
+  if (!navigator.clipboard?.writeText) {
+    throw new Error('Clipboard access is unavailable.');
+  }
   await navigator.clipboard.writeText(text);
 }
 
@@ -87,7 +90,7 @@ function userMessageForError(error: unknown): string {
   if (error instanceof VerificationError) {
     switch (error.code) {
       case 'pending':
-        return 'The public transaction is still confirming. Try again shortly.';
+        return 'The public transaction is still confirming. Check this transaction again shortly.';
       case 'record_not_found':
         return 'No finalized Solana record was found for this transaction.';
       case 'transaction_failed':
@@ -95,7 +98,7 @@ function userMessageForError(error: unknown): string {
       case 'expired':
         return 'The submission expired before Solana recorded it. No ProofStamp was created.';
       case 'rpc_unavailable':
-        return 'We cannot check the public record right now. Try again.';
+        return 'We cannot check the public record right now. Try the same transaction again.';
       case 'wrong_network':
         return 'The RPC is connected to the wrong Solana network.';
       case 'unsupported_transaction':
@@ -117,8 +120,8 @@ export default function App() {
   const [submission, setSubmission] = useState<StampSubmission | null>(null);
   const [chainRecord, setChainRecord] = useState<ChainRecord | null>(null);
   const [receiptText, setReceiptText] = useState('');
-  const [copied, setCopied] = useState(false);
-  const [retryBlocked, setRetryBlocked] = useState(false);
+  const [copyState, setCopyState] = useState<CopyState>('idle');
+  const [createRecovery, setCreateRecovery] = useState<CreationRecovery>('none');
 
   const [checkFile, setCheckFile] = useState<File | null>(null);
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
@@ -130,18 +133,30 @@ export default function App() {
   const [customRpc, setCustomRpc] = useState('');
 
   const createPollCancelled = useRef(false);
+  const checkGate = useRef(new AsyncOperationGate());
   const createBusy = createState === 'hashing' || createState === 'submitting' || createState === 'waiting';
   const createProgressStep =
     createState === 'hashing' ? 0 : createState === 'submitting' ? 1 : createState === 'waiting' ? 2 : -1;
   const receiptInput = receiptFile ? receiptFileText : pastedReceiptText;
   const hasPastedReceipt = !receiptFile && !!pastedReceiptText.trim();
   const checkBusy = checkState === 'checking';
-  const canStamp = !!createFile && !createBusy && createState !== 'ready' && !retryBlocked;
+  const canStamp =
+    !!createFile &&
+    !createBusy &&
+    createState !== 'ready' &&
+    createRecovery !== 'submission-unknown' &&
+    createRecovery !== 'recheck-known-signature';
+  const canResumeKnownTransaction =
+    createRecovery === 'recheck-known-signature' &&
+    !!submission?.signature &&
+    !!createHash &&
+    !createBusy;
   const canCheck = !!checkFile && !!receiptInput.trim() && !checkBusy;
 
   useEffect(() => {
     return () => {
       createPollCancelled.current = true;
+      checkGate.current.invalidate();
     };
   }, []);
 
@@ -153,19 +168,30 @@ export default function App() {
     setSubmission(null);
     setChainRecord(null);
     setReceiptText('');
-    setCopied(false);
-    setRetryBlocked(false);
+    setCopyState('idle');
+    setCreateRecovery('none');
   }
 
-  function resetCheckResult() {
+  function clearCheckResult() {
     setCheckState('idle');
     setCheckMessage('');
     setCheckedRecord(null);
   }
 
+  function invalidateCheckResult() {
+    checkGate.current.invalidate();
+    clearCheckResult();
+  }
+
+  function handleViewChange(nextView: View) {
+    if (nextView === view) return;
+    if (view === 'check') invalidateCheckResult();
+    setView(nextView);
+  }
+
   function handleCheckFile(file: File | null) {
     setCheckFile(file);
-    resetCheckResult();
+    invalidateCheckResult();
   }
 
   async function finishSubmission(current: StampSubmission, expectedHash: string) {
@@ -190,23 +216,28 @@ export default function App() {
         }
       },
     });
+
     const formatted = formatReceipt(receiptFromRecord(record));
     setChainRecord(record);
     setReceiptText(formatted);
     setCreateState('ready');
+    setCreateRecovery('none');
     setCreateMessage('Your ProofStamp is ready.');
   }
 
   async function handleStamp() {
     if (!createFile) return;
+
     createPollCancelled.current = false;
-    setRetryBlocked(false);
+    setCreateRecovery('none');
     setCreateState('hashing');
     setCreateMessage('Creating SHA-256 on this device…');
     setChainRecord(null);
     setReceiptText('');
     setSubmission(null);
-    setCopied(false);
+    setCopyState('idle');
+
+    let current: StampSubmission | null = null;
 
     try {
       const digest = await sha256File(createFile);
@@ -214,21 +245,47 @@ export default function App() {
       setCreateState('submitting');
       setCreateMessage('Recording your ProofStamp…');
 
-      const current = await submitStamp(crypto.randomUUID(), digest);
+      current = await submitStamp(crypto.randomUUID(), digest);
       setSubmission(current);
       await finishSubmission(current, digest);
     } catch (error) {
       setCreateState('error');
-      if (error instanceof SubmissionOutcomeUnknownError) {
-        setRetryBlocked(true);
-      }
+      setCreateRecovery(classifyCreationRecovery(error, !!current?.signature));
       setCreateMessage(userMessageForError(error));
+    }
+  }
+
+  async function handleResumeKnownTransaction() {
+    if (!submission?.signature || !createHash) return;
+
+    createPollCancelled.current = false;
+    setCreateRecovery('none');
+
+    try {
+      await finishSubmission(submission, createHash);
+    } catch (error) {
+      setCreateState('error');
+      setCreateRecovery(classifyCreationRecovery(error, true));
+      setCreateMessage(userMessageForError(error));
+    }
+  }
+
+  async function handleCopyReceipt() {
+    try {
+      await copyText(receiptText);
+      setCopyState('copied');
+    } catch {
+      setCopyState('error');
     }
   }
 
   async function handleReceiptFile(file: File | null) {
     if (!file) return;
+
+    invalidateCheckResult();
     if (file.size > 16_384) {
+      setReceiptFile(null);
+      setReceiptFileText('');
       setCheckMessage('Receipt is too large.');
       setCheckState('error');
       return;
@@ -238,7 +295,6 @@ export default function App() {
     setReceiptFile(file);
     setReceiptFileText(text);
     setPastedReceiptText('');
-    resetCheckResult();
   }
 
   function handlePastedReceipt(value: string) {
@@ -247,21 +303,34 @@ export default function App() {
       setReceiptFile(null);
       setReceiptFileText('');
     }
-    resetCheckResult();
+    invalidateCheckResult();
+  }
+
+  function handleCustomRpc(value: string) {
+    setCustomRpc(value);
+    invalidateCheckResult();
   }
 
   async function handleCheck() {
     if (!checkFile || !receiptInput.trim()) return;
+
+    const runToken = checkGate.current.begin();
+    const fileForRun = checkFile;
+    const receiptForRun = receiptInput;
+    const rpcForRun = customRpc.trim() || undefined;
+
     setCheckState('checking');
     setCheckMessage('Checking the public record and this file…');
     setCheckedRecord(null);
 
     try {
-      const receipt = parseReceipt(receiptInput);
+      const receipt = parseReceipt(receiptForRun);
       const [digest, record] = await Promise.all([
-        sha256File(checkFile),
-        fetchChainRecord(receipt.transaction, receipt.instructionIndex, customRpc || undefined),
+        sha256File(fileForRun),
+        fetchChainRecord(receipt.transaction, receipt.instructionIndex, rpcForRun),
       ]);
+
+      if (!checkGate.current.isCurrent(runToken)) return;
       setCheckedRecord(record);
 
       const fileMatchesChain = digest === record.sha256;
@@ -282,6 +351,7 @@ export default function App() {
       setCheckState('match');
       setCheckMessage('This file matches the public record.');
     } catch (error) {
+      if (!checkGate.current.isCurrent(runToken)) return;
       setCheckState('error');
       setCheckMessage(userMessageForError(error));
     }
@@ -308,11 +378,21 @@ export default function App() {
           </p>
         </section>
 
-        <div className="mode-switch" role="tablist" aria-label="ProofStamp mode">
-          <button role="tab" aria-selected={view === 'stamp'} className={view === 'stamp' ? 'active' : ''} onClick={() => setView('stamp')}>
+        <div className="mode-switch" aria-label="ProofStamp mode">
+          <button
+            type="button"
+            aria-pressed={view === 'stamp'}
+            className={view === 'stamp' ? 'active' : ''}
+            onClick={() => handleViewChange('stamp')}
+          >
             ProofStamp a file
           </button>
-          <button role="tab" aria-selected={view === 'check'} className={view === 'check' ? 'active' : ''} onClick={() => setView('check')}>
+          <button
+            type="button"
+            aria-pressed={view === 'check'}
+            className={view === 'check' ? 'active' : ''}
+            onClick={() => handleViewChange('check')}
+          >
             Check a ProofStamp
           </button>
         </div>
@@ -355,18 +435,20 @@ export default function App() {
               </label>
             )}
 
-            <button className="primary-button" disabled={!canStamp} onClick={handleStamp}>
-              {retryBlocked
-                ? 'Submission outcome unknown'
-                : createState === 'hashing'
-                  ? 'Creating SHA-256…'
-                  : createState === 'submitting'
-                    ? 'Recording…'
-                    : createState === 'waiting'
-                      ? 'Confirming public proof…'
-                      : createState === 'ready'
-                        ? 'ProofStamp created ✓'
-                        : 'Create ProofStamp'}
+            <button type="button" className="primary-button" disabled={!canStamp} onClick={handleStamp}>
+              {createState === 'hashing'
+                ? 'Creating SHA-256…'
+                : createState === 'submitting'
+                  ? 'Recording…'
+                  : createState === 'waiting'
+                    ? 'Confirming public proof…'
+                    : createState === 'ready'
+                      ? 'ProofStamp created ✓'
+                      : createRecovery === 'submission-unknown'
+                        ? 'Submission outcome unknown'
+                        : createRecovery === 'recheck-known-signature'
+                          ? 'Transaction needs recheck'
+                          : 'Create ProofStamp'}
             </button>
 
             {createProgressStep >= 0 && (
@@ -389,12 +471,8 @@ export default function App() {
                 <dl>
                   <dt>Request ID</dt>
                   <dd>{submission.requestId}</dd>
-                  {submission.signature && (
-                    <>
-                      <dt>Transaction</dt>
-                      <dd className="mono break-all">{submission.signature}</dd>
-                    </>
-                  )}
+                  <dt>Transaction</dt>
+                  <dd className="mono break-all">{submission.signature}</dd>
                 </dl>
               </details>
             )}
@@ -402,10 +480,20 @@ export default function App() {
             {createMessage && (
               <div className={`status status-${createState}`} role="status" aria-live="polite">
                 <div>{createMessage}</div>
-                {createState === 'waiting' && submission?.signature && (
+                {(createState === 'waiting' || createState === 'error') && submission?.signature && (
                   <a href={explorerUrl(submission.signature)} target="_blank" rel="noreferrer" className="text-link">
-                    View transaction on Solana Explorer
+                    View this transaction on Solana Explorer
                   </a>
+                )}
+                {canResumeKnownTransaction && (
+                  <div className="recovery-actions">
+                    <button type="button" className="secondary-button" onClick={handleResumeKnownTransaction}>
+                      Check this transaction again
+                    </button>
+                  </div>
+                )}
+                {createRecovery === 'known-signature-failed' && (
+                  <p className="status-note">This outcome is definite. Creating again will send a new transaction.</p>
                 )}
               </div>
             )}
@@ -420,13 +508,19 @@ export default function App() {
             {createState === 'ready' && chainRecord && (
               <div className="success-panel">
                 <div className="success-title"><span className="success-mark" aria-hidden="true">✓</span> Public record verified</div>
-                <p>Keep the receipt with the original file.</p>
+                <p>Keep this receipt with the original file. You need both to check it later.</p>
                 <div className="action-row">
-                  <button className="primary-button" onClick={() => downloadText('proofstamp-solana-receipt.txt', receiptText)}>Download receipt</button>
-                  <button className="secondary-button" onClick={async () => { await copyText(receiptText); setCopied(true); }}>
-                    {copied ? 'Copied' : 'Copy receipt'}
+                  <button type="button" className="primary-button" onClick={() => downloadText('proofstamp-solana-receipt.txt', receiptText)}>Download receipt</button>
+                  <button type="button" className="secondary-button" onClick={handleCopyReceipt}>
+                    {copyState === 'copied' ? 'Copied' : 'Copy receipt'}
                   </button>
                 </div>
+                {copyState === 'error' && (
+                  <div className="copy-fallback" role="status">
+                    <p>Copy failed. Download the receipt or select the text below.</p>
+                    <textarea readOnly rows={7} value={receiptText} aria-label="ProofStamp receipt text" />
+                  </div>
+                )}
                 <a href={explorerUrl(chainRecord.signature)} target="_blank" rel="noreferrer" className="text-link">View public transaction</a>
                 <details className="details-block">
                   <summary>Proof details</summary>
@@ -536,11 +630,20 @@ export default function App() {
             <details className="details-block advanced">
               <summary>Advanced: use another devnet RPC</summary>
               <label className="field-label" htmlFor="custom-rpc">HTTPS RPC URL</label>
-              <input id="custom-rpc" className="text-input" type="url" inputMode="url" placeholder="https://…" value={customRpc} onChange={(event) => setCustomRpc(event.target.value)} />
+              <input
+                id="custom-rpc"
+                className="text-input"
+                type="url"
+                inputMode="url"
+                placeholder="https://…"
+                value={customRpc}
+                disabled={checkBusy}
+                onChange={(event) => handleCustomRpc(event.target.value)}
+              />
               <p className="help-text">The app checks the RPC genesis hash, but verification still depends on the RPC returning accurate Solana history.</p>
             </details>
 
-            <button className="primary-button" disabled={!canCheck} onClick={handleCheck}>{checkBusy ? 'Checking…' : 'Check ProofStamp'}</button>
+            <button type="button" className="primary-button" disabled={!canCheck} onClick={handleCheck}>{checkBusy ? 'Checking…' : 'Check ProofStamp'}</button>
 
             {checkMessage && <div className={`status status-${checkState}`} role="status" aria-live="polite">{checkMessage}</div>}
 
@@ -561,17 +664,18 @@ export default function App() {
 
         <section className="limits-card" aria-labelledby="limits-title">
           <h2 id="limits-title">What this proves</h2>
-          <p>A matching result shows that the exact file bytes match the SHA-256 recorded in the selected public Solana transaction. It does not prove who created the file or whether the content is true.</p>
-          <p className="devnet-note">This is a Solana devnet prototype. Devnet can be reset, so records are not suitable for permanent evidence.</p>
+          <p>A match shows that the exact file bytes match the SHA-256 recorded in the selected public Solana transaction.</p>
+          <p>It does not prove authorship, truth, photo capture time, delivery, or acceptance. Solana's reported block time is not a date written inside the file.</p>
+          <p>Keep the original file and receipt. Verification depends on an RPC with the relevant Solana history, and a public digest can be tested against a guessed candidate file.</p>
+          <p className="devnet-note">This is a Solana devnet prototype. Devnet may reset and historical RPC access may disappear, so this is not permanent evidence.</p>
         </section>
       </main>
 
       <footer>
         <span>ProofStamp via Solana v{APP_VERSION}</span><span>·</span>
-        <span className="mono short-hash">{DEVNET_GENESIS_HASH.slice(0, 8)}…</span><span>·</span>
-        <span className="mono short-hash">{MEMO_PROGRAM_ID.slice(0, 8)}…</span><span>·</span>
-        <a href="https://github.com/Proof-Stamp/solana#v1-flow" target="_blank" rel="noreferrer">How it works</a><span>·</span>
-        <a href="https://github.com/Proof-Stamp/solana/blob/main/PRIVACY.md" target="_blank" rel="noreferrer">Privacy</a>
+        <a href="https://github.com/Proof-Stamp/solana#how-it-works" target="_blank" rel="noreferrer">How it works</a><span>·</span>
+        <a href="https://github.com/Proof-Stamp/solana/blob/main/PRIVACY.md" target="_blank" rel="noreferrer">Privacy</a><span>·</span>
+        <a href="https://github.com/Proof-Stamp/solana" target="_blank" rel="noreferrer">Source</a>
       </footer>
     </div>
   );
