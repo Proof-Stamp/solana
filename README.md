@@ -92,7 +92,7 @@ Wrangler normally serves the built app at `http://localhost:8788`; use the URL i
 
 ## Checks
 
-Run the same checks expected by CI:
+Run these local checks before review:
 
 ```bash
 npm run lint
