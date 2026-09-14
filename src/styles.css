@@ -92,6 +92,9 @@ h2 { color: var(--ps-blue); font-size: 22px; letter-spacing: -0.025em; margin: 0
 .action-row { display: flex; gap: 10px; margin: 18px 0 12px; }
 .action-row .primary-button { width: auto; margin: 0; }
 .text-link { display: inline-block; font-weight: 600; margin-top: 6px; }
+.recovery-actions { margin-top: 12px; }
+.recovery-actions .secondary-button { min-height: 40px; padding-block: 8px; }
+.status-note { color: var(--ps-muted); font-size: 13px; margin: 10px 0 0; }
 
 .creation-progress { margin-top: 16px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
 .progress-step { min-width: 0; display: flex; align-items: center; gap: 7px; color: var(--ps-muted); font-size: 12px; font-weight: 600; }
@@ -121,6 +124,9 @@ h2 { color: var(--ps-blue); font-size: 22px; letter-spacing: -0.025em; margin: 0
 .success-title { color: var(--ps-success); font-size: 18px; font-weight: 700; }
 .success-mark { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; color: var(--ps-white); background: var(--ps-success); margin-right: 7px; }
 .success-panel p { color: var(--ps-muted); margin: 8px 0 0; }
+.copy-fallback { margin: 14px 0; border-top: 1px solid #d9e8df; padding-top: 12px; }
+.copy-fallback p { margin: 0 0 8px; }
+.copy-fallback textarea { background: var(--ps-white); }
 
 .two-column-inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .field-label { display: block; color: var(--ps-graphite); font-weight: 650; font-size: 14px; margin: 17px 0 7px; }
@@ -134,6 +140,7 @@ textarea { resize: vertical; line-height: 1.45; font-family: 'IBM Plex Mono', ui
 .devnet-note { color: var(--ps-warning) !important; font-weight: 600; }
 
 footer { border-top: 1px solid var(--ps-border); color: var(--ps-muted); font-size: 12px; width: min(1040px, calc(100% - 32px)); margin: 0 auto; padding: 22px 0 30px; display: flex; flex-wrap: wrap; gap: 7px; }
+footer a { font-weight: 600; }
 
 @media (max-width: 640px) {
   .site-header { padding: 18px 0; }
