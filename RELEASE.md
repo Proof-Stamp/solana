@@ -39,7 +39,7 @@ Do not mark these complete based only on source configuration, repository visibi
 
 The public-readiness work was merged in [PR #17](https://github.com/Proof-Stamp/solana/pull/17). That PR and its linked commits and CI runs are historical evidence only; they do not establish current release status.
 
-Notable historical evidence referenced during that work includes GitHub Actions run `34863869702` for release-candidate CI and run `34863568754` for the repository-history scan. Use fresh evidence from the exact commit for current releases.
+Notable historical evidence referenced during that work includes [GitHub Actions run 34863869702](https://github.com/Proof-Stamp/solana/actions/runs/34863869702) for release-candidate CI and [run 34863568754](https://github.com/Proof-Stamp/solana/actions/runs/34863568754) for the repository-history scan. Use fresh evidence from the exact commit for current releases.
 
 ## Follow-up candidate outside this cleanup
 
