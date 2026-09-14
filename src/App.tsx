@@ -134,6 +134,7 @@ export default function App() {
 
   const createPollCancelled = useRef(false);
   const checkGate = useRef(new AsyncOperationGate());
+  const receiptLoadGate = useRef(new AsyncOperationGate());
   const createBusy = createState === 'hashing' || createState === 'submitting' || createState === 'waiting';
   const createProgressStep =
     createState === 'hashing' ? 0 : createState === 'submitting' ? 1 : createState === 'waiting' ? 2 : -1;
@@ -157,6 +158,7 @@ export default function App() {
     return () => {
       createPollCancelled.current = true;
       checkGate.current.invalidate();
+      receiptLoadGate.current.invalidate();
     };
   }, []);
 
@@ -185,7 +187,10 @@ export default function App() {
 
   function handleViewChange(nextView: View) {
     if (nextView === view) return;
-    if (view === 'check') invalidateCheckResult();
+    if (view === 'check') {
+      receiptLoadGate.current.invalidate();
+      invalidateCheckResult();
+    }
     setView(nextView);
   }
 
@@ -280,24 +285,41 @@ export default function App() {
   }
 
   async function handleReceiptFile(file: File | null) {
-    if (!file) return;
-
+    const loadToken = receiptLoadGate.current.begin();
     invalidateCheckResult();
-    if (file.size > 16_384) {
+
+    if (!file) {
       setReceiptFile(null);
       setReceiptFileText('');
+      return;
+    }
+
+    setReceiptFile(file);
+    setReceiptFileText('');
+    setPastedReceiptText('');
+
+    if (file.size > 16_384) {
+      setReceiptFile(null);
       setCheckMessage('Receipt is too large.');
       setCheckState('error');
       return;
     }
 
-    const text = await file.text();
-    setReceiptFile(file);
-    setReceiptFileText(text);
-    setPastedReceiptText('');
+    try {
+      const text = await file.text();
+      if (!receiptLoadGate.current.isCurrent(loadToken)) return;
+      setReceiptFileText(text);
+    } catch {
+      if (!receiptLoadGate.current.isCurrent(loadToken)) return;
+      setReceiptFile(null);
+      setReceiptFileText('');
+      setCheckMessage('Could not read this receipt file. Choose it again or paste the receipt text.');
+      setCheckState('error');
+    }
   }
 
   function handlePastedReceipt(value: string) {
+    receiptLoadGate.current.invalidate();
     setPastedReceiptText(value);
     if (value.length > 0) {
       setReceiptFile(null);
