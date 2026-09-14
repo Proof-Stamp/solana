@@ -14,6 +14,7 @@ export interface ConfirmationDependencies {
   getChainRecord: (signature: string) => Promise<ChainRecord>;
   sleep: () => Promise<void>;
   isCancelled: () => boolean;
+  onStatus?: (status: SignatureStatus | null) => void;
 }
 
 const defaultDependencies: ConfirmationDependencies = {
@@ -42,6 +43,7 @@ export async function waitForFinalizedProofStamp(
     let status: SignatureStatus | null;
     try {
       status = await dependencies.getSignatureStatus(current.signature);
+      dependencies.onStatus?.(status);
     } catch (error) {
       if (error instanceof VerificationError && error.code === 'rpc_unavailable') {
         lastTransientError = error;

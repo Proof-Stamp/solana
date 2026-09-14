@@ -158,7 +158,7 @@ export default function App() {
     }
 
     setCreateState('waiting');
-    setCreateMessage('Waiting for final confirmation…');
+    setCreateMessage('Submitted to Solana ✓. Waiting for network confirmation…');
 
     const record = await waitForFinalizedProofStamp(current, expectedHash, {
       getSignatureStatus: (signature) => fetchSignatureStatus(signature),
@@ -166,6 +166,13 @@ export default function App() {
       getChainRecord: (signature) => fetchChainRecord(signature),
       sleep: () => new Promise((resolve) => setTimeout(resolve, 2000)),
       isCancelled: () => createPollCancelled.current,
+      onStatus: (status) => {
+        if (status?.confirmationStatus === 'confirmed') {
+          setCreateMessage('Confirmed by Solana ✓. Finalizing public proof…');
+        } else if (status?.confirmationStatus === 'finalized') {
+          setCreateMessage('Finalized on Solana ✓. Verifying public record…');
+        }
+      },
     });
     const formatted = formatReceipt(receiptFromRecord(record));
     setChainRecord(record);
@@ -328,7 +335,7 @@ export default function App() {
                   : createState === 'submitting'
                     ? 'Recording…'
                     : createState === 'waiting'
-                      ? 'Waiting for confirmation…'
+                      ? 'Confirming public proof…'
                       : createState === 'ready'
                         ? 'ProofStamp created ✓'
                         : 'Create ProofStamp'}
@@ -336,7 +343,7 @@ export default function App() {
 
             {createProgressStep >= 0 && (
               <div className="creation-progress" aria-hidden="true">
-                {['Hash file', 'Record on Solana', 'Confirm public record'].map((label, index) => (
+                {['Hash file', 'Record on Solana', 'Finalize public proof'].map((label, index) => (
                   <div
                     className={`progress-step${index < createProgressStep ? ' done' : ''}${index === createProgressStep ? ' active' : ''}`}
                     key={label}
@@ -364,7 +371,16 @@ export default function App() {
               </details>
             )}
 
-            {createMessage && <div className={`status status-${createState}`} role="status" aria-live="polite">{createMessage}</div>}
+            {createMessage && (
+              <div className={`status status-${createState}`} role="status" aria-live="polite">
+                <div>{createMessage}</div>
+                {createState === 'waiting' && submission?.signature && (
+                  <a href={explorerUrl(submission.signature)} target="_blank" rel="noreferrer" className="text-link">
+                    View transaction on Solana Explorer
+                  </a>
+                )}
+              </div>
+            )}
 
             {createHash && (
               <details className="details-block">
