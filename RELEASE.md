@@ -35,18 +35,18 @@ The ESLint/Prettier baseline is intentionally bounded. Their exact versions are 
 | Check | Evidence | Result | Limitation |
 | --- | --- | --- | --- |
 | Source diff review | All 20 changed paths reviewed against refreshed `main` | Completed | Source review is not browser execution. |
-| CI before final evidence-only doc update | GitHub Actions run `34863689955`, job `test`, head `7a5e7759…` | Passed | This final evidence-only documentation commit still requires its own CI. |
+| CI on release candidate | GitHub Actions run `34863869702`, job `test` | Passed | A later code/config commit would require fresh CI. |
 | Receipt-loading race guard | `AsyncOperationGate` + guarded `file.text()` path + focused regression coverage | Passed in CI | Full browser interaction remains a manual release check. |
 | Verification stale-result guard | Generation-token logic + focused regression coverage | Passed in CI | Full browser interaction remains a manual release check. |
 | Known-signature recovery | Recovery classification + source-wiring regression coverage | Passed in CI | Manual network inspection is still required to confirm zero second `/api/stamps` POSTs in the browser. |
 | Cloudflare PR preview | Candidate tree deployed successfully during review | Available | Deployment success alone does not establish production secret configuration. |
 | Owner preview review | Owner manually reviewed the candidate preview and reported it good | Passed at owner-review level | Individual edge-case scenarios were not separately itemized as evidence. |
-| Fresh all-ref/all-history secret scan | Temporary read-only workflow run `34863568754` after release-evidence update | Passed | High-signal scanner, not a commercial/entropy-based secret-scanning product. |
+| Fresh all-ref/all-history secret scan | Temporary read-only workflow run `34863568754` | Passed | High-signal scanner, not a commercial/entropy-based secret-scanning product. |
 | Full create / receipt / match / mismatch flow on approved production merge | Not yet executed | Unverified | Required before public visibility. |
 | Cloudflare edge rate limit and secret separation | Requires account/operator inspection | Unverified | CORS is not an abuse control. |
 | Fee-payer balance | Requires operator/Solana account inspection | Unverified | Confirm the dedicated signer holds only a small devnet balance. |
 
-The final fresh scanner fetched repository branches, tags, and GitHub pull-request head refs, scanned commit messages and text blobs without printing candidate values, and reported: **no obvious secret literals across 152 unique reachable commits from 31 fetched refs**. It checked project-sensitive secret assignments, raw Solana/key byte arrays, long Base58 secret-like literals, private-key PEM markers, credential-bearing URLs, GitHub/AWS token patterns, bearer credentials, JWT-like values, and sensitive-looking committed filenames. The temporary workflow was then removed. Its add/remove pair produced no net file difference from the scanned candidate tree.
+The fresh scanner fetched repository branches, tags, and GitHub pull-request head refs, scanned commit messages and text blobs without printing candidate values, and reported: **no obvious secret literals across 152 unique reachable commits from 31 fetched refs**. It checked project-sensitive secret assignments, raw Solana/key byte arrays, long Base58 secret-like literals, private-key PEM markers, credential-bearing URLs, GitHub/AWS token patterns, bearer credentials, JWT-like values, and sensitive-looking committed filenames. The temporary workflow was removed after the successful run. Its add/remove pair produced no net file difference from the scanned candidate tree. The only subsequent repository-file change before this wording update was this release-evidence document itself; it was directly inspected and contains no credential material.
 
 No inline PR review threads were open when last inspected. The PR remains draft and unmerged.
 
