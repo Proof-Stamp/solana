@@ -20,6 +20,9 @@ For the complete local creation path, also copy `.dev.vars.example` to `.dev.var
 Run:
 
 ```bash
+npm run lint
+npm run format:check
+npm run typecheck
 npm test
 npm run build
 node --check worker/index.mjs
@@ -28,7 +31,11 @@ node -e "import('./worker/index.mjs').then(() => console.log('worker imports ok'
 node -e "import('./functions/api/stamps.mjs').then(() => console.log('Pages function imports ok'))"
 ```
 
-`npm run build` includes TypeScript checking. There is no separate lint or formatting command today.
+`npm run build` still includes TypeScript checking. `npm run typecheck` provides the same TypeScript check separately for faster focused validation.
+
+The release-readiness branch introduces ESLint for the JavaScript runtime surfaces and Prettier for the tooling/CI configuration. The exact tool versions are pinned in the npm scripts and fetched with `npx` when first used, so adding these checks does not rewrite the existing application dependency lockfile. TypeScript source is covered by `typecheck`, tests, and the production build.
+
+Prettier enforcement is intentionally incremental in this release. It covers the tooling and CI files listed by `format:check`; the existing application source has not been mass-reformatted. Expand that baseline in a separate formatting-only change rather than mixing broad formatting churn into a behavioral pull request.
 
 For UI changes, also check the relevant flow with a keyboard and at a narrow mobile width. Do not treat mocked RPC tests as proof that a browser interaction works.
 
