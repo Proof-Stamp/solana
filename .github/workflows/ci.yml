@@ -22,14 +22,6 @@ jobs:
         with:
           node-version: '24.15.0'
       - run: npm install --global npm@12.0.2
-      - name: Generate tooling lockfile
-        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
-      - name: Upload generated lockfile
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: tooling-lockfile
-          path: package-lock.json
-          retention-days: 1
       - run: npm ci --ignore-scripts
       - run: npm run lint
       - run: npm run format:check
