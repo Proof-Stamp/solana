@@ -1,3 +1,5 @@
+import tseslint from 'typescript-eslint';
+
 const readonlyGlobals = Object.fromEntries(
   [
     'AbortController',
@@ -27,9 +29,19 @@ const readonlyGlobals = Object.fromEntries(
   ].map((name) => [name, 'readonly']),
 );
 
+const runtimeRules = {
+  'no-duplicate-case': 'error',
+  'no-dupe-keys': 'error',
+  'no-redeclare': 'error',
+  'no-undef': 'error',
+  'no-unreachable': 'error',
+  'no-unused-vars': ['error', { argsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' }],
+  'no-useless-catch': 'error',
+};
+
 export default [
   {
-    ignores: ['dist/**', 'coverage/**', 'node_modules/**', 'src/**', 'tests/**/*.ts', 'vite.config.ts'],
+    ignores: ['dist/**', 'coverage/**', 'node_modules/**'],
   },
   {
     files: ['eslint.config.js', 'scripts/**/*.mjs', 'worker/**/*.mjs', 'functions/**/*.mjs', 'tests/**/*.mjs'],
@@ -38,14 +50,30 @@ export default [
       sourceType: 'module',
       globals: readonlyGlobals,
     },
+    rules: runtimeRules,
+  },
+  {
+    files: ['src/**/*.{ts,tsx}', 'tests/**/*.ts', 'vite.config.ts'],
+    languageOptions: {
+      parser: tseslint.parser,
+      parserOptions: {
+        ecmaVersion: 'latest',
+        sourceType: 'module',
+        ecmaFeatures: { jsx: true },
+      },
+    },
+    plugins: {
+      '@typescript-eslint': tseslint.plugin,
+    },
     rules: {
       'no-duplicate-case': 'error',
       'no-dupe-keys': 'error',
-      'no-redeclare': 'error',
-      'no-undef': 'error',
       'no-unreachable': 'error',
-      'no-unused-vars': ['error', { argsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' }],
       'no-useless-catch': 'error',
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_', varsIgnorePattern: '^_' },
+      ],
     },
   },
 ];
