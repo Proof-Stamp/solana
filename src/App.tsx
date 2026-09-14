@@ -121,7 +121,9 @@ export default function App() {
   const [retryBlocked, setRetryBlocked] = useState(false);
 
   const [checkFile, setCheckFile] = useState<File | null>(null);
-  const [receiptInput, setReceiptInput] = useState('');
+  const [receiptFile, setReceiptFile] = useState<File | null>(null);
+  const [receiptFileText, setReceiptFileText] = useState('');
+  const [pastedReceiptText, setPastedReceiptText] = useState('');
   const [checkState, setCheckState] = useState<CheckState>('idle');
   const [checkMessage, setCheckMessage] = useState('');
   const [checkedRecord, setCheckedRecord] = useState<ChainRecord | null>(null);
@@ -131,8 +133,11 @@ export default function App() {
   const createBusy = createState === 'hashing' || createState === 'submitting' || createState === 'waiting';
   const createProgressStep =
     createState === 'hashing' ? 0 : createState === 'submitting' ? 1 : createState === 'waiting' ? 2 : -1;
+  const receiptInput = receiptFile ? receiptFileText : pastedReceiptText;
+  const hasPastedReceipt = !receiptFile && !!pastedReceiptText.trim();
+  const checkBusy = checkState === 'checking';
   const canStamp = !!createFile && !createBusy && createState !== 'ready' && !retryBlocked;
-  const canCheck = !!checkFile && !!receiptInput.trim() && checkState !== 'checking';
+  const canCheck = !!checkFile && !!receiptInput.trim() && !checkBusy;
 
   useEffect(() => {
     return () => {
@@ -150,6 +155,17 @@ export default function App() {
     setReceiptText('');
     setCopied(false);
     setRetryBlocked(false);
+  }
+
+  function resetCheckResult() {
+    setCheckState('idle');
+    setCheckMessage('');
+    setCheckedRecord(null);
+  }
+
+  function handleCheckFile(file: File | null) {
+    setCheckFile(file);
+    resetCheckResult();
   }
 
   async function finishSubmission(current: StampSubmission, expectedHash: string) {
@@ -217,9 +233,21 @@ export default function App() {
       setCheckState('error');
       return;
     }
-    setReceiptInput(await file.text());
-    setCheckState('idle');
-    setCheckMessage('');
+
+    const text = await file.text();
+    setReceiptFile(file);
+    setReceiptFileText(text);
+    setPastedReceiptText('');
+    resetCheckResult();
+  }
+
+  function handlePastedReceipt(value: string) {
+    setPastedReceiptText(value);
+    if (value.length > 0) {
+      setReceiptFile(null);
+      setReceiptFileText('');
+    }
+    resetCheckResult();
   }
 
   async function handleCheck() {
@@ -415,28 +443,95 @@ export default function App() {
             )}
           </section>
         ) : (
-          <section className="card" aria-labelledby="check-title">
+          <section className="card" aria-labelledby="check-title" aria-busy={checkBusy}>
             <div className="card-heading">
               <span className="proof-point" aria-hidden="true" />
               <div>
                 <h2 id="check-title">Check the exact file later</h2>
-                <p>Select the original file and its ProofStamp receipt.</p>
+                <p>Select the file, then upload its ProofStamp receipt or paste the receipt text.</p>
               </div>
             </div>
 
-            <div className="two-column-inputs">
-              <div>
-                <label className="field-label" htmlFor="check-file">File</label>
-                <input id="check-file" className="native-input" type="file" onChange={(event) => setCheckFile(event.target.files?.[0] ?? null)} />
-              </div>
-              <div>
-                <label className="field-label" htmlFor="receipt-file">Receipt</label>
-                <input id="receipt-file" className="native-input" type="file" accept=".txt,text/plain" onChange={(event) => handleReceiptFile(event.target.files?.[0] ?? null)} />
-              </div>
+            <div className="check-input-section">
+              <div className="field-label field-label-first">File to check</div>
+              {checkFile ? (
+                <div className="selected-file">
+                  <div className="selected-file-row">
+                    <span className="selected-file-name" title={checkFile.name}>{checkFile.name}</span>
+                    <label className={`file-change-button${checkBusy ? ' is-disabled' : ''}`}>
+                      Choose another file
+                      <input
+                        className="visually-hidden"
+                        type="file"
+                        disabled={checkBusy}
+                        onChange={(event) => handleCheckFile(event.target.files?.[0] ?? null)}
+                      />
+                    </label>
+                  </div>
+                  <p className="file-meta">{formatBytes(checkFile.size)} · {checkFile.type || 'unknown media type'}</p>
+                </div>
+              ) : (
+                <label className="file-picker">
+                  <span>Choose file</span>
+                  <span className="file-picker-note">Hashed locally</span>
+                  <input
+                    className="visually-hidden"
+                    type="file"
+                    disabled={checkBusy}
+                    onChange={(event) => handleCheckFile(event.target.files?.[0] ?? null)}
+                  />
+                </label>
+              )}
             </div>
 
-            <label className="field-label" htmlFor="receipt-text">Or paste receipt text</label>
-            <textarea id="receipt-text" value={receiptInput} onChange={(event) => setReceiptInput(event.target.value)} rows={7} placeholder="ProofStamp via Solana receipt…" />
+            <div className="check-input-section receipt-input-section">
+              <div className="field-label field-label-first">Receipt</div>
+              <p className="input-help">Use either a receipt file or pasted receipt text.</p>
+
+              {receiptFile ? (
+                <div className="selected-file">
+                  <div className="selected-file-row">
+                    <span className="selected-file-name" title={receiptFile.name}>{receiptFile.name}</span>
+                    <label className={`file-change-button${checkBusy ? ' is-disabled' : ''}`}>
+                      Choose another receipt
+                      <input
+                        className="visually-hidden"
+                        type="file"
+                        accept=".txt,text/plain"
+                        disabled={checkBusy}
+                        onChange={(event) => handleReceiptFile(event.target.files?.[0] ?? null)}
+                      />
+                    </label>
+                  </div>
+                  <p className="file-meta">{formatBytes(receiptFile.size)} · {receiptFile.type || 'text/plain'}</p>
+                </div>
+              ) : (
+                <label className={`file-picker receipt-picker${hasPastedReceipt ? ' has-pasted-receipt' : ''}`}>
+                  <span>Upload receipt</span>
+                  <span className={`file-picker-note${hasPastedReceipt ? ' ready-note' : ''}`}>
+                    {hasPastedReceipt ? 'Pasted receipt ready ✓' : '.txt file'}
+                  </span>
+                  <input
+                    className="visually-hidden"
+                    type="file"
+                    accept=".txt,text/plain"
+                    disabled={checkBusy}
+                    onChange={(event) => handleReceiptFile(event.target.files?.[0] ?? null)}
+                  />
+                </label>
+              )}
+
+              <div className="input-divider" aria-hidden="true"><span>or</span></div>
+              <label className="field-label receipt-text-label" htmlFor="receipt-text">Paste receipt text</label>
+              <textarea
+                id="receipt-text"
+                value={pastedReceiptText}
+                disabled={checkBusy}
+                onChange={(event) => handlePastedReceipt(event.target.value)}
+                rows={7}
+                placeholder={receiptFile ? 'Paste receipt text here to use it instead of the selected receipt file…' : 'ProofStamp via Solana receipt…'}
+              />
+            </div>
 
             <details className="details-block advanced">
               <summary>Advanced: use another devnet RPC</summary>
@@ -445,7 +540,7 @@ export default function App() {
               <p className="help-text">The app checks the RPC genesis hash, but verification still depends on the RPC returning accurate Solana history.</p>
             </details>
 
-            <button className="primary-button" disabled={!canCheck} onClick={handleCheck}>{checkState === 'checking' ? 'Checking…' : 'Check ProofStamp'}</button>
+            <button className="primary-button" disabled={!canCheck} onClick={handleCheck}>{checkBusy ? 'Checking…' : 'Check ProofStamp'}</button>
 
             {checkMessage && <div className={`status status-${checkState}`} role="status" aria-live="polite">{checkMessage}</div>}
 
