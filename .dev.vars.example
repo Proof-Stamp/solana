@@ -1,6 +1,7 @@
-# Local server development. Copy to .dev.vars and fill the keypair.
+# Local Cloudflare Pages development. Copy to .dev.vars and use a dedicated devnet signer.
 SOLANA_RPC_URL="https://api.devnet.solana.com"
 SOLANA_EXPECTED_GENESIS_HASH="EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG"
 SOLANA_FEE_PAYER_SECRET="[64-byte Solana CLI keypair JSON array]"
 SUBMISSION_ENABLED="true"
-ALLOWED_ORIGIN="http://localhost:5173"
+# Same-origin `wrangler pages dev` needs no CORS override. Set this only when the frontend runs on another origin.
+ALLOWED_ORIGIN=""
