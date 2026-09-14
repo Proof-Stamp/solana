@@ -1,3 +1,4 @@
+// @ts-expect-error Node's runtime module is available in Vitest; @types/node is intentionally not a project dependency yet.
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { AsyncOperationGate } from '../src/lib/ui-state';
