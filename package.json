@@ -8,9 +8,9 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "lint": "eslint .",
-    "format": "prettier --write .",
-    "format:check": "prettier --check .",
+    "lint": "npx --yes eslint@10.9.1 eslint.config.js scripts worker functions tests/worker.test.mjs",
+    "format": "npx --yes prettier@3.9.6 --write eslint.config.js package.json .prettierrc .github/workflows/ci.yml",
+    "format:check": "npx --yes prettier@3.9.6 --check eslint.config.js package.json .prettierrc .github/workflows/ci.yml",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -28,15 +28,10 @@
     "react-dom": "19.2.8"
   },
   "devDependencies": {
-    "@eslint/js": "10.0.1",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.5",
     "@vitejs/plugin-react": "6.1.0",
-    "eslint": "10.9.1",
-    "globals": "17.11.0",
-    "prettier": "3.9.6",
     "typescript": "5.9.3",
-    "typescript-eslint": "8.68.0",
     "vite": "8.2.2",
     "vitest": "4.1.11",
     "wrangler": "4.131.0"
