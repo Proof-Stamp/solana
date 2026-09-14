@@ -1,6 +1,6 @@
 # Public release evidence and owner checklist
 
-This file records what was inspected for the public-release candidate and what still needs direct evidence. A historical checkmark is not treated as proof for a newer commit.
+This file records what was inspected for the public-release candidate and what still needs direct evidence. A historical checkmark is not proof for a newer commit.
 
 ## Release candidate
 
@@ -9,125 +9,174 @@ This file records what was inspected for the public-release candidate and what s
 - Scope remains Solana **devnet**, browser SHA-256, restricted sponsored creation, canonical Memo transactions, finalized read-back, and browser verification.
 - Mainnet, user wallets, passkeys, ZeroDev, custom programs, and an application database are outside this release.
 
+## Source-review result
+
+The complete PR file list was reviewed before release approval. The candidate changes application UI/recovery logic, tests, documentation, and CI/tooling. It does **not** change `worker/index.mjs`, `functions/api/stamps.mjs`, `wrangler.jsonc`, or `package-lock.json`, so the sponsor endpoint implementation, Pages wrapper, deployment environment configuration, and application dependency lock are outside this PR's behavioral diff.
+
+The latest code-bearing head reviewed before this checklist correction was `df08be2db7df978fe7bb3b788dcd2a149f164c61`. GitHub Actions run `34861127497` completed successfully. The workflow is named `CI`; the actual status-check job to require in branch protection is **`test`**.
+
+CI currently runs:
+
+- `npm ci --ignore-scripts`
+- `npm run lint`
+- `npm run format:check`
+- `npm run typecheck`
+- `npm test`
+- `npm run build`
+- Worker and Pages Function syntax checks
+- Worker and Pages Function module-import checks
+
+The workflow also has read-only repository permissions, concurrency cancellation, a 10-minute timeout, and SHA-pinned GitHub Actions.
+
+The ESLint/Prettier baseline is intentionally bounded. Their exact versions are pinned in npm scripts and fetched with `npx`; they are not part of `package-lock.json`. This avoids a broad lockfile rewrite in this release, but it is a deliberate tooling supply-chain tradeoff rather than a fully lockfile-reproducible setup.
+
 ## Verification evidence
 
-| Check | Environment / evidence type | Result | Limitation |
+| Check | Evidence | Result | Limitation |
 | --- | --- | --- | --- |
-| Initial CI at `72db1453d2490e5d877baa7b5779ad3552ac2726` | GitHub Actions run `34848240467` supplied in the release brief | Passed | Historical evidence only. It does not validate the current branch. |
-| Current source review | GitHub source + diff inspection from refreshed `main` | Completed | Source inspection is not browser execution. |
-| Verification input invalidation | Focused `AsyncOperationGate` regression test added on release branch | Added | Must pass CI on the final PR head. |
-| Known-signature recovery classification | Focused recovery regression tests added on release branch | Added | Must pass CI on the final PR head. |
-| Existing dependency PRs #6-#11 | Their PR head commits each have a completed successful CI run | Passed on those dependency branches | Their CI does not validate this release branch or make the upgrades necessary. |
-| Live app / deployment SHA | Direct live-site access was not available in this review environment | Unverified | Read `proofstamp-build` and `proofstamp-deployment` from the deployed HTML after deployment and compare the SHA with the approved commit. |
-| Current browser create / receipt / match / mismatch flow | Not executed in this review environment | Unverified | Run on the approved deployment or a trusted preview after CI. |
-| Cloudflare edge rate limit | Prior release notes claim a control exists | Unverified now | CORS is not a rate limit. Confirm the active Cloudflare rule or equivalent control in the account. |
-| Fee-payer balance | Requires Solana/account access | Unverified | Confirm the dedicated devnet signer holds only a small amount of devnet SOL. |
+| Source diff review | All 20 changed paths reviewed against refreshed `main` | Completed | Source review is not browser execution. |
+| CI on `df08be2…` | GitHub Actions run `34861127497`, job `test` | Passed | Any later commit still requires its own green CI. |
+| Receipt-loading race guard | `AsyncOperationGate` + guarded `file.text()` path + focused regression coverage | Passed in CI | Full browser interaction remains a manual release check. |
+| Verification stale-result guard | Generation-token logic + focused regression coverage | Passed in CI | Full browser interaction remains a manual release check. |
+| Known-signature recovery | Recovery classification + source-wiring regression coverage | Passed in CI | Manual network inspection is still required to confirm zero second `/api/stamps` POSTs in the browser. |
+| Cloudflare PR preview | Cloudflare PR bot reported a successful preview deployment for `df08be2…` | Available | Deployment success alone does not establish browser behavior or production secret configuration. |
+| Full create / receipt / match / mismatch flow on this candidate | Not yet executed on the approved deployment | Unverified | Required before public visibility. |
+| Fresh all-ref/all-history secret scan | Not rerun for this candidate | Unverified | Required before public visibility. |
+| Cloudflare edge rate limit and secret separation | Requires account/operator inspection | Unverified | CORS is not an abuse control. |
+| Fee-payer balance | Requires operator/Solana account inspection | Unverified | Confirm the dedicated signer holds only a small devnet balance. |
 
-The final draft PR must have green CI on its current head before approval. CI runs `npm test`, `npm run build`, Worker and Pages Function syntax checks, and import checks. `npm run build` includes TypeScript checking. There is no separate lint/format check.
+No inline PR review threads are currently open. The PR remains draft and unmerged.
 
 ## Correctness changes in this candidate
 
-The public-release candidate specifically addresses two release blockers:
+1. **Verification results belong to the current inputs.** Changing the selected file, receipt source/text, or custom RPC invalidates the previous verdict and public record. Leaving the Check view also invalidates pending receipt loads and verification results. Older asynchronous operations carry generation tokens and cannot overwrite newer state.
+2. **Receipt-file loading is guarded.** Selecting a newer receipt, replacing it with pasted text, clearing the selection, or leaving the Check view prevents an older delayed `file.text()` result from replacing the newer input. Receipt-read failures produce a bounded user-facing error.
+3. **A known transaction is recovered by checking that transaction.** Once a sponsor response contains a signature, transient confirmation/RPC/read-back failures preserve the signature and explorer link and offer **Check this transaction again**. That action resumes confirmation/read-back and does not call `submitStamp`. Failed or expired transactions remain definite outcomes. A lost/ambiguous submission response remains distinct and is not blindly retried.
 
-1. **Verification results belong to the current inputs.** Changing the file, receipt source/text, custom RPC, or leaving the Check view invalidates the previous verdict and public record. An older asynchronous operation carries a generation token and cannot overwrite a newer selection. Inputs that affect the result are disabled while a check is running.
-2. **A known transaction is recovered by checking that transaction.** Once the sponsor response contains a signature, transient confirmation/RPC/read-back errors preserve the signature and explorer link and offer **Check this transaction again**. That action resumes confirmation/read-back and does not call the stamp submission endpoint. Failed or expired transactions remain definite outcomes. A lost/ambiguous submission response remains distinct and is not blindly retried.
+The candidate also handles clipboard failure with a selectable receipt fallback, replaces incomplete tab semantics with ordinary pressed-state mode buttons, simplifies the footer, links source/docs, and expands proof limitations.
 
-The candidate also catches clipboard failure, replaces incomplete tab semantics with ordinary pressed-state mode buttons, removes low-value abbreviated infrastructure identifiers from the footer, adds a Source link, and expands the visible proof limitations.
+## Automated-test limitation
 
-## Manual browser scenarios still required
+The new regression tests cover the operation-gate behavior and inspect the relevant App wiring, but they are not full DOM or end-to-end browser tests. In particular, the zero-new-submission test establishes that the recovery handler does not call `submitStamp`; the browser release check must still confirm that clicking **Check this transaction again** produces no second `/api/stamps` request.
 
-Run these on the exact candidate deployment. Record the commit SHA, deployment URL, time, and result in the PR before approval.
+## Browser and deployment checks still required
 
-1. Create one proof from a harmless file. Confirm success appears only after finalization and public read-back. In browser network tools, confirm the application POST contains the protocol version, request ID, and digest only, not file bytes or filename.
-2. Keep/download the receipt. Reload, verify the original file, then alter a copy and confirm mismatch against the same public transaction.
-3. Edit receipt convenience metadata while preserving the transaction signature and instruction index. Confirm the file verdict follows the public chain record and metadata differences are reported separately.
-4. Start a check and change each relevant input before a later check: selected file, receipt, and custom RPC. Confirm an old result never reappears for the new inputs.
-5. Exercise pending, failed, expired, missing-record, wrong-network, and unavailable-RPC outcomes using controlled cases where practical. None may become success. For a known signature after a transient failure, use **Check this transaction again** and confirm no second `/api/stamps` request is sent.
-6. Disable the local/preview submission service and confirm an existing receipt can still be checked through RPC.
-7. Check keyboard operation, focus visibility, a narrow mobile viewport, and reduced-motion behavior. Capture one desktop and one narrow-mobile screenshot of the real candidate UI for the PR/README release package. Do not fabricate successful states.
+Use the PR preview for layout, verification-only, accessibility, and stale-input checks that do not require sponsored creation. Preview sponsored creation should remain disabled and the production signer must not be exposed to preview.
+
+After the reviewed PR is approved and merged **while the repository is still private**, deploy the approved merge commit to production and run the creation smoke test there before changing repository visibility.
+
+Record commit SHA, deployment URL, time, and result for these scenarios:
+
+1. Confirm desktop and narrow-mobile rendering, keyboard operation, focus visibility, reduced-motion behavior, README/Mermaid rendering, and the visible proof limitations. Capture real screenshots from the candidate.
+2. Verify an existing receipt and original file, then an altered copy. Confirm match and mismatch use the public transaction.
+3. Edit receipt convenience metadata while preserving the transaction signature and instruction index. Confirm chain data remains authoritative and metadata differences are reported separately.
+4. Start verification and change each relevant input before the older request completes. Confirm an old result never reappears for the new inputs.
+5. Exercise controlled missing-record, wrong-network, and unavailable-RPC cases. None may become success.
+6. For a known signature after a transient failure, click **Check this transaction again** and confirm browser network tools show **zero** new `/api/stamps` requests.
+7. After the approved merge commit is deployed privately to production, create one harmless proof. Confirm the POST contains protocol version, request ID, and digest only, then wait for finalized read-back, save the receipt, verify the original, and verify an altered copy mismatches.
+8. Set `SUBMISSION_ENABLED=false` and confirm new creation stops while an existing receipt can still be checked.
+
+Do not fabricate successful states or use screenshots from an older build as evidence for the candidate.
 
 ## Secrets and private operational material
 
-Publication requires two different checks: the current tree and reachable history.
+Publication requires separate checks of the current tree and reachable Git history.
 
 - Current release changes were inspected for environment files, signer material, RPC credentials, private operational notes, and generated files. Example configuration contains placeholders and public devnet identifiers only.
-- No repository tags were present when the Git refs were checked.
-- PR #5 records that a temporary full-history scanner checked reachable `main` history and found only documentation-placeholder false positives after correction. That is useful **historical evidence**, not a newly executed scan for this candidate.
-- Since the baseline supplied for this review (`72db1453...`), refreshed `main` changed only `src/App.tsx` and `src/styles.css` before this release branch. Those changes were inspected and do not contain credentials.
-- The available GitHub connector does not provide a fresh full historical-blob secret scanner. Before visibility changes, rerun an approved local/history scanner against all refs, for example with Gitleaks or an equivalent tool configured to inspect all reachable Git history. Do not paste candidate secrets into the PR. If anything real is found, rotate it first and keep publication blocked. Deleting it from the latest tree is insufficient.
-
-Also review Cloudflare build/deploy logs, GitHub issue/PR attachments, screenshots, and any copied diagnostics for signer or RPC secrets. The release review inspected accessible PR discussion and CI/deployment comments but did not have Cloudflare account log access.
+- No repository tags were present when refs were previously checked.
+- PR #5 records a successful temporary full-history scan against then-reachable `main`. That is useful historical evidence, not a fresh scan for this candidate.
+- Before visibility changes, rerun an approved secret/history scanner against **all refs and reachable history**. Do not paste candidate secrets into the PR. If anything real is found, rotate it before publication; deleting it only from the latest tree is insufficient.
+- Also inspect Cloudflare build/deploy logs, GitHub issue/PR attachments, screenshots, and copied diagnostics for signer or private RPC material.
 
 ## Dependency PR disposition
 
-All six open Dependabot PR heads currently have successful CI. None is required to solve a release blocker, so keep dependency churn separate from the public-release PR.
+The open Dependabot work remains maintenance, not a public-release blocker. Re-evaluate each PR on the updated base before merging it. Keep major upgrades separate unless a security issue makes one urgent.
 
 | PR | Change | Release disposition |
 | --- | --- | --- |
-| #6 | `actions/setup-node` 4 → 7 | **Defer and review separately.** Major action/runtime change. The update includes dependency/security hardening, but current CI pins the existing action by full commit SHA and no release blocker was identified. |
-| #7 | `actions/checkout` 4 → 7.0.1 | **Defer and review separately.** Major action behavior/runtime change with security-related fixes. Evaluate the workflow semantics in its own PR rather than folding it into the release. |
-| #8 | Vitest 4.1.11 → 5.0.0 | **Defer.** Major test-runner release with breaking changes and a newer Node requirement. Not needed for this release. |
-| #9 | `@vitejs/plugin-react` 6.1.0 → 6.1.1 | **Good low-risk follow-up.** Patch update and CI is green. Merge separately after the release PR unless a newly disclosed security issue makes it urgent. |
-| #10 | TypeScript 5.9.3 → 7.0.2 | **Defer.** Major compiler/toolchain change. Keep separate and review generated diagnostics/build behavior. |
-| #11 | `@types/react-dom` 19.2.5 → 19.2.7 | **Good low-risk follow-up.** Patch type update and CI is green. Merge separately after the release PR. |
+| #6 | `actions/setup-node` 4 → 7 | **Defer and review separately.** Major action/runtime change. |
+| #7 | `actions/checkout` 4 → 7.0.1 | **Defer and review separately.** Major action/runtime change with security relevance. |
+| #8 | Vitest 4.1.11 → 5.0.0 | **Defer.** Major test-runner change. |
+| #9 | `@vitejs/plugin-react` 6.1.0 → 6.1.1 | **Low-risk follow-up.** Rebase/retest and merge separately if still clean. |
+| #10 | TypeScript 5.9.3 → 7.0.2 | **Defer.** Major compiler/toolchain change. |
+| #11 | `@types/react-dom` 19.2.5 → 19.2.7 | **Low-risk follow-up.** Rebase/retest and merge separately if still clean. |
+
+A small, explained dependency backlog is acceptable at launch.
 
 ## Branch disposition
 
-Do not delete branches as part of this task. The following recommendations are for the owner after the release PR is merged.
+Do not delete branches before release stability is confirmed.
 
 | Branch | Evidence | Proposed disposition |
 | --- | --- | --- |
-| `feat/v0.1-solana-devnet` | Behind `main` with `ahead_by: 0`; its PRs #1-#4 were merged | Safe to delete after final owner review. |
-| `fix/pages-env-config` | Behind `main` with `ahead_by: 0`; PR #12 merged | Safe to delete after final owner review. |
-| `ux/issue-13-check-selectors` | Behind `main` with `ahead_by: 0`; PR #16 merged | Safe to delete after final owner review. |
-| `ux/finalization-progress` | Branch head is the merged PR #15 head; later `main` contains the finalization/status UX | Safe to delete after confirming no post-merge commits were added. |
-| `docs/public-release-final` | Branch head is the merged PR #14 head; later `main` contains the release documentation changes | Safe to delete after confirming no post-merge commits were added. |
-| `chore/public-release-hardening` | Branch head is the merged PR #5 head; compare is divergent because the merged history was replayed/advanced on `main` | Safe to delete only after confirming no post-merge commits beyond the merged PR head. |
-| `release/public-readiness-2026-09-14` | Current review branch | Keep through approval/merge; delete only after release handoff is complete. |
+| `feat/v0.1-solana-devnet` | Behind `main`, no unique ahead commits when reviewed | Delete after release stability check. |
+| `fix/pages-env-config` | Merged PR #12; no unique ahead commits when reviewed | Delete after release stability check. |
+| `ux/issue-13-check-selectors` | Merged PR #16; no unique ahead commits when reviewed | Delete after release stability check. |
+| `ux/finalization-progress` | Head matches merged PR #15 head | Delete after confirming no later unique work. |
+| `docs/public-release-final` | Head matches merged PR #14 head | Delete after confirming no later unique work. |
+| `chore/public-release-hardening` | Head matches merged PR #5 head; history comparison is divergent because of replay/advance on `main` | Delete only after confirming no later unique work. |
+| `release/public-readiness-2026-09-14` | Current release branch | Keep through merge and release handoff. |
 
-Dependabot branches should follow the corresponding PR disposition rather than being manually deleted first.
+Dependabot branches follow their PR disposition.
 
-## GitHub metadata for owner review
+## GitHub launch settings
 
-Do not change repository settings until the code and operational gates are approved.
+Prepare these values before public visibility:
 
 - **Description:** `Create and verify file proofs on Solana devnet. Local SHA-256, sponsored transactions, no user wallet.`
 - **Homepage:** `https://solana.proofstamp.org`
 - **Topics:** `solana`, `devnet`, `sha256`, `timestamping`, `file-integrity`, `typescript`
-- Protect `main` and require the existing **CI** check before merge. Keep force pushes and branch deletion disabled for protected `main` unless there is a deliberate maintenance reason.
-- Enable private vulnerability reporting if available for the repository/account.
+- Prefer squash-only merging and automatic deletion of merged branches.
+- Disable unused repository surfaces such as Projects if they are not being used. Keep Wiki, Discussions, and GitHub Pages off unless there is a deliberate need.
+
+Target `main` protection/ruleset:
+
+- require a pull request before merge;
+- require status check **`test`**;
+- require review conversations to be resolved;
+- use 0 required approving reviews while this is a solo-maintainer repository, unless the ownership model changes;
+- block force pushes;
+- block branch deletion;
+- avoid broad bypass permissions.
+
+During this review, GitHub's ruleset endpoint returned an upgrade-or-public-visibility restriction for the private repository. Therefore, settings that the current plan does not expose while private are **not** pre-public blockers. Prepare them now, make the approved repository public only after the technical release gates are satisfied, then apply the ruleset immediately.
+
+Private vulnerability reporting is likewise a public-repository launch setting here. Enable it immediately after public visibility. Enable secret scanning, push protection, CodeQL/default code scanning, Dependabot security features, and other GitHub security features when they are actually available for the public repository/account; record unavailable or paid-only features as unavailable rather than pretending they are enabled.
 
 ## Cloudflare / operator checks before public visibility
 
 Confirm in the actual account rather than relying on source configuration alone:
 
 - production and preview use the intended devnet RPC/genesis configuration;
-- production signer material is a secret, not a build variable, and is absent from previews;
+- production signer material is stored as a secret, not a build variable, and is absent from preview;
 - preview sponsored creation remains disabled;
 - the dedicated fee payer is low-balance and devnet-only;
 - `/api/stamps` has an active edge rate limit or equivalent abuse control;
-- `SUBMISSION_ENABLED=false` stops new creation while existing receipts can still be checked;
+- `SUBMISSION_ENABLED=false` stops new creation while existing receipts remain verifiable;
 - deployed HTML contains `proofstamp-build` and `proofstamp-deployment`, and the build SHA equals the approved Git commit.
 
 ## Release decision
 
-**Blocked pending final approval evidence.** The source candidate addresses the identified correctness and presentation issues, but public visibility should wait for:
+**Blocked pending final release evidence.** Public visibility still requires:
 
-1. green CI on the final draft-PR head;
-2. the manual browser scenarios above, including real desktop/mobile screenshots;
-3. a fresh all-history/all-ref secret scan or equivalent owner-approved evidence;
-4. direct confirmation of Cloudflare rate limiting, secret separation, kill switch, fee-payer balance, and deployed commit metadata.
+1. green CI on the exact final PR head;
+2. candidate browser/UI evidence and real screenshots;
+3. a fresh all-ref/all-history secret scan;
+4. direct Cloudflare/operator confirmation of rate limiting, secret separation, kill switch, fee-payer balance, and deployed commit metadata;
+5. successful production create → finalized read-back → original match → altered mismatch on the approved merge commit while the repository is still private.
 
 No mainnet migration or architecture expansion is required to clear these gates.
 
 ## Final owner sequence
 
-1. Review the complete draft PR diff and its CI/manual evidence.
-2. Approve and merge the reviewed PR.
-3. Deploy the **approved merge commit**.
-4. Verify `proofstamp-build` matches that commit and run the minimal live create → finalized read-back → original match → altered mismatch flow.
-5. Confirm the Cloudflare controls and fresh secret-scan result.
-6. Apply the GitHub description, homepage, topics, branch protection, and private vulnerability-reporting settings.
-7. Approve the repository visibility change to public.
-8. While logged out, check README rendering, Mermaid, brand assets, LICENSE, CONTRIBUTING, SECURITY, PRIVACY, How it works, Source, and live-app links.
-9. Remove obsolete merged branches only after the visibility release is stable and the owner has confirmed their disposition above.
+1. Complete this source review and confirm final CI on the draft PR head.
+2. Run preview-safe browser/UI checks and capture candidate screenshots.
+3. Run the fresh all-ref/all-history secret scan and resolve any real finding.
+4. Approve and merge the reviewed PR **while the repository remains private**.
+5. Deploy the approved merge commit to production.
+6. Confirm the deployed SHA, Cloudflare controls, signer separation/balance, kill switch, and the minimal production create → finalized read-back → original match → altered mismatch flow.
+7. Apply repository metadata and any GitHub settings that are available while private.
+8. Change repository visibility to public.
+9. Immediately apply the `main` ruleset requiring **`test`**, enable private vulnerability reporting, and enable applicable public-repository security features.
+10. While logged out, verify README/Mermaid/brand rendering, badges, LICENSE, CONTRIBUTING, SECURITY, PRIVACY, DISCLAIMER, TRADEMARKS, Source, and live-app links.
+11. After the public release is stable, remove obsolete merged branches and finish the dependency-PR dispositions.
