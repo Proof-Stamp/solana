@@ -75,6 +75,15 @@ h2 { color: var(--ps-blue); font-size: 22px; letter-spacing: -0.025em; margin: 0
 .file-change-button.is-disabled { opacity: 0.55; cursor: not-allowed; }
 .selected-file .file-meta { margin-top: 6px; }
 
+.check-input-section + .check-input-section { margin-top: 22px; }
+.field-label-first { margin: 0 0 8px; }
+.input-help { color: var(--ps-muted); font-size: 13px; line-height: 1.45; margin: -2px 0 10px; }
+.receipt-picker.has-pasted-receipt { border-style: solid; border-color: #bdd6c9; background: #f7fbf8; }
+.file-picker-note.ready-note { color: var(--ps-success); font-weight: 700; }
+.input-divider { display: flex; align-items: center; gap: 12px; color: var(--ps-muted); font-size: 12px; font-weight: 650; margin: 15px 0 10px; text-transform: uppercase; letter-spacing: 0.04em; }
+.input-divider::before, .input-divider::after { content: ''; height: 1px; background: var(--ps-border); flex: 1; }
+.receipt-text-label { margin-top: 0; }
+
 .primary-button, .secondary-button { min-height: 46px; border-radius: 9px; padding: 11px 17px; font-weight: 700; border: 1px solid var(--ps-blue); }
 .primary-button { width: 100%; margin-top: 22px; background: var(--ps-blue); color: var(--ps-white); }
 .primary-button:hover:not(:disabled) { background: var(--ps-blue-hover); border-color: var(--ps-blue-hover); }
